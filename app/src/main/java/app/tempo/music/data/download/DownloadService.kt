@@ -56,6 +56,13 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
+    /** Android 15+: data-sync services get a daily time budget; stop cleanly when it runs out. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        job?.cancel()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
