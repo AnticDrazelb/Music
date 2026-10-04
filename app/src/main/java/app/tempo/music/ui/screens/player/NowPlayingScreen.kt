@@ -39,7 +39,6 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AllInclusive
-import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
@@ -53,8 +52,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -106,8 +104,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val White70 = Color.White.copy(alpha = 0.7f)
-private val White55 = Color.White.copy(alpha = 0.55f)
+internal val White70 = Color.White.copy(alpha = 0.7f)
+internal val White55 = Color.White.copy(alpha = 0.55f)
+
+enum class PlayerPanel { ARTWORK, LYRICS, QUEUE }
 
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
@@ -123,14 +123,13 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
     val context = LocalContext.current
     val state by player.state.collectAsState()
     val autoplay by container.settings.autoplay.collectAsState()
-    val sleepEnd by player.sleepTimerEnd.collectAsState()
     val song = state.current
     val colors = animatedArtworkColors(song?.thumbnailUrl)
-    var showQueue by rememberSaveable { mutableStateOf(false) }
+    var panel by rememberSaveable { mutableStateOf(PlayerPanel.ARTWORK) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val dismissThreshold = with(LocalDensity.current) { 140.dp.toPx() }
 
-    BackHandler { if (showQueue) showQueue = false else onCollapse() }
+    BackHandler { if (panel != PlayerPanel.ARTWORK) panel = PlayerPanel.ARTWORK else onCollapse() }
     LightSystemBars()
 
     val dismissDrag = Modifier.pointerInput(Unit) {
@@ -181,13 +180,14 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                 return@Column
             }
 
+            val liked = song.id in LocalLikedIds.current
             AnimatedContent(
-                targetState = showQueue,
+                targetState = panel,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 modifier = Modifier.weight(1f),
-                label = "queue",
-            ) { queueVisible ->
-                if (!queueVisible) {
+                label = "panel",
+            ) { shown ->
+                if (shown == PlayerPanel.ARTWORK) {
                     val scale by animateFloatAsState(
                         if (state.playWhenReady) 1f else 0.82f,
                         spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
@@ -217,8 +217,15 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                                 Text(song.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(song.artist, color = White70, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
+                            RoundGlassButton(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Remove from Favorites" else "Add to Favorites") { player.toggleLike(song) }
+                            Spacer(Modifier.width(10.dp))
+                            RoundGlassButton(Icons.Rounded.MoreHoriz, "More") { menu.open(song, fromPlayer = true) }
                         }
-                        QueueList(state, autoplay, Modifier.weight(1f))
+                        if (shown == PlayerPanel.LYRICS) {
+                            LyricsPanel(song, state, Modifier.weight(1f))
+                        } else {
+                            QueueList(state, autoplay, Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -226,8 +233,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
             Spacer(Modifier.height(18.dp))
 
             // Title / artist / favourite / more
-            if (!showQueue) {
-                val liked = song.id in LocalLikedIds.current
+            if (panel == PlayerPanel.ARTWORK) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -253,7 +259,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                     }
                     RoundGlassButton(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Remove from Favorites" else "Add to Favorites") { player.toggleLike(song) }
                     Spacer(Modifier.width(12.dp))
-                    RoundGlassButton(Icons.Rounded.MoreHoriz, "More") { menu.open(song) }
+                    RoundGlassButton(Icons.Rounded.MoreHoriz, "More") { menu.open(song, fromPlayer = true) }
                 }
                 Spacer(Modifier.height(14.dp))
             }
@@ -290,11 +296,15 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SleepTimerButton(active = sleepEnd != null) { player.setSleepTimer(it) }
+                ToggleGlassButton(Icons.Rounded.Lyrics, "Lyrics", panel == PlayerPanel.LYRICS) {
+                    panel = if (panel == PlayerPanel.LYRICS) PlayerPanel.ARTWORK else PlayerPanel.LYRICS
+                }
                 IconButton(onClick = { shareSong(context, song) }) {
                     Icon(Icons.Rounded.Share, "Share", tint = White70)
                 }
-                ToggleGlassButton(Icons.AutoMirrored.Rounded.QueueMusic, "Playing Next", showQueue) { showQueue = !showQueue }
+                ToggleGlassButton(Icons.AutoMirrored.Rounded.QueueMusic, "Playing Next", panel == PlayerPanel.QUEUE) {
+                    panel = if (panel == PlayerPanel.QUEUE) PlayerPanel.ARTWORK else PlayerPanel.QUEUE
+                }
             }
         }
     }
@@ -395,7 +405,7 @@ private fun VolumeBar() {
 }
 
 @Composable
-private fun RoundGlassButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+internal fun RoundGlassButton(icon: ImageVector, description: String, onClick: () -> Unit) {
     Box(
         Modifier
             .size(34.dp)
@@ -409,7 +419,7 @@ private fun RoundGlassButton(icon: ImageVector, description: String, onClick: ()
 }
 
 @Composable
-private fun ToggleGlassButton(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+internal fun ToggleGlassButton(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .size(40.dp)
@@ -419,23 +429,6 @@ private fun ToggleGlassButton(icon: ImageVector, description: String, active: Bo
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, description, tint = if (active) Color.Black.copy(alpha = 0.75f) else White70, modifier = Modifier.size(24.dp))
-    }
-}
-
-@Composable
-private fun SleepTimerButton(active: Boolean, onPick: (Int) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        ToggleGlassButton(Icons.Rounded.Bedtime, "Sleep timer", active) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            listOf(15, 30, 45, 60).forEach { minutes ->
-                DropdownMenuItem(text = { Text("$minutes minutes") }, onClick = { open = false; onPick(minutes) })
-            }
-            DropdownMenuItem(text = { Text("End of current song") }, onClick = { open = false; onPick(-1) })
-            if (active) {
-                DropdownMenuItem(text = { Text("Turn off timer") }, onClick = { open = false; onPick(0) })
-            }
-        }
     }
 }
 

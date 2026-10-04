@@ -6,7 +6,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 <img src="docs/screenshots/01_home.jpg" width="200">
 <img src="docs/screenshots/05_chart_top100.jpg" width="200">
 <img src="docs/screenshots/09_now_playing.jpg" width="200">
-<img src="docs/screenshots/10_queue.jpg" width="200">
+<img src="docs/screenshots/09b_lyrics.jpg" width="200">
 </p>
 <p>
 <img src="docs/screenshots/03_browse.jpg" width="200">
@@ -29,8 +29,12 @@ An Apple Music–style music player for Android that streams from YouTube.
 - **Similar songs**: "Create Station" builds a radio from any song. **Autoplay (∞)** keeps
   adding similar songs when your queue runs out.
 - **Now Playing**: the background colour comes from the artwork. The artwork shrinks when
-  paused. Includes a scrubber, volume, a ♥ favourite button, sleep timer, share, and a queue
-  with shuffle, repeat, autoplay, drag-to-reorder and swipe-to-remove.
+  paused. Includes a scrubber, volume, a ♥ favourite button, share, and a queue with
+  shuffle, repeat, autoplay, drag-to-reorder and swipe-to-remove. The sleep timer is in the
+  ⋯ menu.
+- **Lyrics**: time-synced lyrics that follow the song, with the current line highlighted.
+  Tap a line to jump to it. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
+  the device after the first view, so they also show offline.
 - **Downloads**: save any song, album, playlist or your Favorites for offline listening.
   Downloads run in the background with a progress notification and play straight from
   storage, with no connection needed. Manage them in Library → Downloaded or in Settings.
@@ -43,7 +47,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.1.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.2.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
@@ -67,7 +68,13 @@ import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.navigation.LocalPlayer
 import kotlinx.coroutines.launch
 
-data class MenuTarget(val song: Song, val playlistId: Long? = null, val entryId: Long? = null)
+data class MenuTarget(
+    val song: Song,
+    val playlistId: Long? = null,
+    val entryId: Long? = null,
+    /** Opened from Now Playing: also offers player-only actions such as the sleep timer. */
+    val fromPlayer: Boolean = false,
+)
 
 /** Global state for the song action sheet and playlist pickers. */
 class SongMenuState {
@@ -75,9 +82,10 @@ class SongMenuState {
     var addToPlaylist by mutableStateOf<List<Song>?>(null)
     var newPlaylistFor by mutableStateOf<List<Song>?>(null)
     var showNewPlaylist by mutableStateOf(false)
+    var showSleepTimer by mutableStateOf(false)
 
-    fun open(song: Song, playlistId: Long? = null, entryId: Long? = null) {
-        target = MenuTarget(song, playlistId, entryId)
+    fun open(song: Song, playlistId: Long? = null, entryId: Long? = null, fromPlayer: Boolean = false) {
+        target = MenuTarget(song, playlistId, entryId, fromPlayer)
     }
 
     fun pickPlaylist(songs: List<Song>) {
@@ -107,6 +115,9 @@ fun SongMenuHost(state: SongMenuState, onNavigateAway: () -> Unit) {
     val songs = state.addToPlaylist
     if (songs != null) {
         AddToPlaylistSheet(songs, state)
+    }
+    if (state.showSleepTimer) {
+        SleepTimerSheet(state)
     }
     if (state.showNewPlaylist) {
         NewPlaylistDialog(state)
@@ -150,7 +161,15 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
             SheetGroup {
                 SheetAction(Icons.Rounded.QueuePlayNext, "Play Next") { act { player.playNext(song) } }
                 SheetAction(Icons.AutoMirrored.Rounded.QueueMusic, "Play Last") { act { player.addToQueue(listOf(song)) } }
-                SheetAction(Icons.Rounded.Radio, "Create Station", showDivider = false) { act { player.startRadio(song) } }
+                SheetAction(Icons.Rounded.Radio, "Create Station", showDivider = target.fromPlayer) { act { player.startRadio(song) } }
+                if (target.fromPlayer) {
+                    val sleepEnd by player.sleepTimerEnd.collectAsState()
+                    val label = sleepEnd?.let { end ->
+                        val minutes = ((end - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
+                        "Sleep Timer · $minutes min left"
+                    } ?: "Sleep Timer"
+                    SheetAction(Icons.Rounded.Bedtime, label, showDivider = false) { act { state.showSleepTimer = true } }
+                }
             }
             SheetGroup {
                 SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to a Playlist…") { act { state.pickPlaylist(listOf(song)) } }
@@ -350,4 +369,44 @@ private fun NewPlaylistDialog(state: SongMenuState) {
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     )
+}
+
+@Composable
+private fun SleepTimerSheet(state: SongMenuState) {
+    val player = LocalPlayer.current
+    val sleepEnd by player.sleepTimerEnd.collectAsState()
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    fun pick(minutes: Int) {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            state.showSleepTimer = false
+            player.setSleepTimer(minutes)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { state.showSleepTimer = false },
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
+            Text(
+                "Sleep Timer",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            SheetGroup {
+                val options = listOf(15 to "15 Minutes", 30 to "30 Minutes", 45 to "45 Minutes", 60 to "1 Hour", -1 to "End of Current Song")
+                options.forEachIndexed { index, (minutes, label) ->
+                    SheetAction(Icons.Rounded.Bedtime, label, showDivider = index < options.lastIndex) { pick(minutes) }
+                }
+            }
+            if (sleepEnd != null) {
+                SheetGroup {
+                    SheetAction(Icons.Rounded.Close, "Turn Off Timer", tint = MaterialTheme.colorScheme.error, showDivider = false) { pick(0) }
+                }
+            }
+        }
+    }
 }

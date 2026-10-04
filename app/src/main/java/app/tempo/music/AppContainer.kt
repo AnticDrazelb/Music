@@ -14,6 +14,7 @@ import app.tempo.music.data.charts.ChartsRepository
 import app.tempo.music.data.db.MusicDatabase
 import app.tempo.music.data.download.AudioDownloader
 import app.tempo.music.data.download.DownloadRepository
+import app.tempo.music.data.lyrics.LyricsRepository
 import app.tempo.music.data.youtube.StreamResolver
 import app.tempo.music.data.youtube.YouTubeRepository
 import app.tempo.music.playback.PlayerConnection
@@ -43,6 +44,11 @@ class AppContainer(context: Context) {
     val library = LibraryRepository(database)
     val youtube = YouTubeRepository(httpClient)
     val charts = ChartsRepository(httpClient)
+    val lyrics = LyricsRepository(
+        httpClient,
+        File(appContext.filesDir, "lyrics"),
+        userAgent = "Tempo/${BuildConfig.VERSION_NAME} (Android music player)",
+    )
 
     val streamResolver = StreamResolver(youtube) {
         settings.highQuality.value && !(settings.dataSaverOnCellular.value && NetworkState.isMetered(appContext))

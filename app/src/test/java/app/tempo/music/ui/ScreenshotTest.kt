@@ -187,9 +187,17 @@ open class ScreenshotTest {
         settleImages(5000)
         snap("09_now_playing")
 
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Lyrics")).onFirst().performClick()
+        settleImages(6000)
+        snap("09b_lyrics")
+
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Playing Next")).onFirst().performClick()
         settleImages(2000)
         snap("10_queue")
+
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("More")).onFirst().performClick()
+        settleImages(1500)
+        snap("10b_player_menu")
     }
 
     @Test
