@@ -51,8 +51,8 @@ import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -251,7 +251,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                                 },
                         )
                     }
-                    RoundGlassButton(if (liked) Icons.Rounded.Star else Icons.Rounded.StarBorder, "Favorite") { player.toggleLike(song) }
+                    RoundGlassButton(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Remove from Favorites" else "Add to Favorites") { player.toggleLike(song) }
                     Spacer(Modifier.width(12.dp))
                     RoundGlassButton(Icons.Rounded.MoreHoriz, "More") { menu.open(song) }
                 }

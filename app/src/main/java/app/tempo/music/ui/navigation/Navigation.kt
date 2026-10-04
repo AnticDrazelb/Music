@@ -44,6 +44,7 @@ enum class LibrarySection(val title: String) {
     RECENT("Recently Played"),
     ALBUMS("Albums"),
     ARTISTS("Artists"),
+    DOWNLOADS("Downloaded"),
 }
 
 enum class Tab { HOME, BROWSE, SEARCH, LIBRARY }

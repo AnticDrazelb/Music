@@ -30,16 +30,27 @@ class StreamResolver(
         } catch (e: Exception) {
             throw IOException(friendlyMessage(e), e)
         }
-        val resolved = pick(info) ?: throw IOException("No playable audio found for this song")
+        val resolved = pick(info, highQuality()) ?: throw IOException("No playable audio found for this song")
         cache[videoId] = resolved
         return resolved
+    }
+
+    /** Always the best available quality, freshly resolved (downloads are kept long-term). */
+    @Throws(IOException::class)
+    fun resolveForDownload(videoId: String): Resolved {
+        val info = try {
+            youtube.streamInfoBlocking(videoId)
+        } catch (e: Exception) {
+            throw IOException(friendlyMessage(e), e)
+        }
+        return pick(info, high = true) ?: throw IOException("No downloadable audio found for this song")
     }
 
     fun invalidate(videoId: String) {
         cache.remove(videoId)
     }
 
-    private fun pick(info: StreamInfo): Resolved? {
+    private fun pick(info: StreamInfo, high: Boolean): Resolved? {
         val candidates = info.audioStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
             .let { all ->
@@ -50,7 +61,7 @@ class StreamResolver(
                 original.ifEmpty { all }
             }
 
-        val chosen: AudioStream? = if (highQuality()) {
+        val chosen: AudioStream? = if (high) {
             candidates.maxByOrNull { it.averageBitrate }
         } else {
             candidates.filter { it.averageBitrate >= 48 }.minByOrNull { it.averageBitrate }

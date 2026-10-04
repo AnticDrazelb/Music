@@ -52,6 +52,7 @@ import app.tempo.music.ui.components.LoadingBox
 import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.PlayShuffleButtons
 import app.tempo.music.ui.components.belowTopBar
+import app.tempo.music.ui.components.songsLabel
 import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.navigation.LocalPlayer
@@ -97,22 +98,16 @@ class TopArtistsViewModel(private val c: AppContainer, private val country: Stri
 
 @Composable
 fun ChartScreen(kindName: String, country: String, initialLimit: Int) {
-    val kind = runCatching { ChartKind.valueOf(kindName) }.getOrDefault(ChartKind.TOP_SONGS)
+    // Only song charts use this screen; artists have TopArtistsScreen.
+    val kind = ChartKind.TOP_SONGS
     val vm = appViewModel(key = "$kindName-$country") { ChartViewModel(it, kind, country) }
     val chart by vm.chart.collectAsState()
     val player = LocalPlayer.current
     val menu = LocalSongMenu.current
     val listState = rememberLazyListState()
     var limit by rememberSaveable { mutableIntStateOf(initialLimit) }
-    val showLimitToggle = kind == ChartKind.TOP_SONGS || kind == ChartKind.TOP_VIDEOS
-    val effectiveLimit = if (showLimitToggle) limit else 100
     val place = if (country == ChartsRepository.GLOBAL) "Global" else Countries.name(country)
-    val title = when (kind) {
-        ChartKind.TOP_SONGS -> "Top $effectiveLimit: $place"
-        ChartKind.TOP_VIDEOS -> "Top Music Videos: $place"
-        ChartKind.TRENDING -> "Trending: $place"
-        ChartKind.TOP_ARTISTS -> "Top Artists: $place"
-    }
+    val title = "Top $limit: $place"
     val colors = if (country == ChartsRepository.GLOBAL) Gradients.all[0] else Gradients.forKey(kind.name + country)
 
     DetailScaffold(title = title, listState = listState) { padding ->
@@ -122,12 +117,7 @@ fun ChartScreen(kindName: String, country: String, initialLimit: Int) {
                     Spacer(Modifier.height(8.dp))
                     GradientArt(
                         title = place,
-                        eyebrow = when (kind) {
-                            ChartKind.TOP_SONGS -> "Top $effectiveLimit"
-                            ChartKind.TOP_VIDEOS -> "Top Videos"
-                            ChartKind.TRENDING -> "Trending"
-                            ChartKind.TOP_ARTISTS -> "Top Artists"
-                        },
+                        eyebrow = "Top $limit",
                         colors = colors,
                         titleSize = 30,
                         corner = 10.dp,
@@ -137,18 +127,16 @@ fun ChartScreen(kindName: String, country: String, initialLimit: Int) {
                     Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 24.dp))
                     val period = (chart as? Load.Ready)?.data?.periodLabel
                     Text(
-                        period ?: if (kind == ChartKind.TRENDING) "Updated daily" else "Updated weekly",
+                        period ?: "Updated weekly",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (showLimitToggle) {
-                        Spacer(Modifier.height(14.dp))
-                        SegmentedControl(
-                            options = listOf("Top 40", "Top 100"),
-                            selected = if (limit == 40) 0 else 1,
-                            onSelect = { limit = if (it == 0) 40 else 100 },
-                        )
-                    }
+                    Spacer(Modifier.height(14.dp))
+                    SegmentedControl(
+                        options = listOf("Top 40", "Top 100"),
+                        selected = if (limit == 40) 0 else 1,
+                        onSelect = { limit = if (it == 0) 40 else 100 },
+                    )
                     Spacer(Modifier.height(16.dp))
                 }
             }
@@ -156,7 +144,7 @@ fun ChartScreen(kindName: String, country: String, initialLimit: Int) {
                 is Load.Loading -> item { LoadingBox() }
                 is Load.Failed -> item { ErrorBox(c.message, onRetry = vm::load) }
                 is Load.Ready -> {
-                    val entries = c.data.entries.take(effectiveLimit)
+                    val entries = c.data.entries.take(limit)
                     val songs = entries.map { it.song }
                     item {
                         PlayShuffleButtons(onPlay = { player.play(songs) }, onShuffle = { player.play(songs, shuffle = true) })
@@ -171,7 +159,7 @@ fun ChartScreen(kindName: String, country: String, initialLimit: Int) {
                     }
                     item {
                         Text(
-                            "${entries.size} songs · Source: YouTube Charts",
+                            "${songsLabel(entries.size)} · Source: YouTube Charts",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(20.dp),

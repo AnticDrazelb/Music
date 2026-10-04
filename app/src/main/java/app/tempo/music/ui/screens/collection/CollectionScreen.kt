@@ -37,12 +37,14 @@ import app.tempo.music.data.model.Song
 import app.tempo.music.ui.components.Artwork
 import app.tempo.music.ui.components.CircleIconButton
 import app.tempo.music.ui.components.DetailScaffold
+import app.tempo.music.ui.components.DownloadAllButton
 import app.tempo.music.ui.components.ErrorBox
 import app.tempo.music.ui.components.LoadingBox
 import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.PlayShuffleButtons
 import app.tempo.music.ui.components.SongRow
 import app.tempo.music.ui.components.belowTopBar
+import app.tempo.music.ui.components.songsLabel
 import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalPlayer
 import app.tempo.music.ui.navigation.appViewModel
@@ -144,6 +146,8 @@ fun CollectionScreen(initial: CollectionRef) {
         title = ref.title,
         listState = listState,
         actions = {
+            DownloadAllButton(state.songs)
+            Spacer(Modifier.size(10.dp))
             CircleIconButton(
                 if (saved) Icons.Rounded.Check else Icons.Rounded.Add,
                 if (saved) "Remove from Library" else "Add to Library",
@@ -189,7 +193,7 @@ fun CollectionScreen(initial: CollectionRef) {
                         CollectionType.PLAYLIST -> "Playlist"
                     }
                     Text(
-                        if (count > 0) "$kind · $count songs" else kind,
+                        if (count > 0) "$kind · ${songsLabel(count)}" else kind,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -220,7 +224,7 @@ fun CollectionScreen(initial: CollectionRef) {
                         item {
                             Column(Modifier.padding(20.dp)) {
                                 Text(
-                                    "${state.songs.size} songs",
+                                    songsLabel(state.songs.size),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

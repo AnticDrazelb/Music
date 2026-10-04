@@ -24,8 +24,7 @@ import androidx.compose.material.icons.rounded.ArrowDropUp
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +65,9 @@ fun formatDuration(seconds: Long): String {
     val s = seconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
+
+/** "1 song", "12 songs". */
+fun songsLabel(count: Number): String = if (count.toLong() == 1L) "1 song" else "$count songs"
 
 fun formatCount(n: Long): String = when {
     n >= 1_000_000_000 -> "%.1fB".format(n / 1e9).replace(".0B", "B")
@@ -126,8 +128,12 @@ fun SongRow(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (liked) {
-                        Icon(Icons.Rounded.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
+                        Icon(Icons.Rounded.Favorite, "Favorite", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                         Spacer(Modifier.width(3.dp))
+                    }
+                    if (song.id in LocalDownloads.current) {
+                        DownloadMark(song.id)
+                        Spacer(Modifier.width(4.dp))
                     }
                     Text(
                         subtitle ?: song.artist,
@@ -324,35 +330,6 @@ fun CollectionCard(item: CollectionRef, onClick: () -> Unit, modifier: Modifier 
 @Composable
 fun SongCard(song: Song, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 160.dp) {
     MediaCard(song.title, song.artist, song.thumbnailUrl, onClick, modifier, width, onLongClick, imageKey = song.id)
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun VideoCard(song: Song, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 260.dp) {
-    Column(
-        modifier
-            .width(width)
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    ) {
-        Box {
-            Artwork(
-                song.thumbnailUrl,
-                Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                RoundedCornerShape(8.dp),
-                fallbackKey = song.id,
-            )
-            Icon(
-                Icons.Rounded.PlayCircle,
-                null,
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp).size(28.dp),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(song.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
 }
 
 @Composable

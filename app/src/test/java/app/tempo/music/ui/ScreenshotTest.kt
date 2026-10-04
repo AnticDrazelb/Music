@@ -19,6 +19,7 @@ import app.tempo.music.MainActivity
 import app.tempo.music.TempoApp
 import app.tempo.music.data.charts.ChartsRepository
 import app.tempo.music.data.model.ChartKind
+import app.tempo.music.data.model.Song
 import app.tempo.music.playback.PlaybackService
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -149,7 +150,7 @@ open class ScreenshotTest {
         snap("06_search_home")
         compose.onNode(hasSetTextAction()).performTextInput("the weeknd")
         compose.onNode(hasSetTextAction()).performImeAction()
-        waitForText("Videos")
+        waitForText("Playlists")
         compose.waitUntil(30_000) {
             compose.onAllNodesWithText("The Weeknd", substring = true).fetchSemanticsNodes().size > 2
         }
@@ -189,6 +190,34 @@ open class ScreenshotTest {
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Playing Next")).onFirst().performClick()
         settleImages(2000)
         snap("10_queue")
+    }
+
+    @Test
+    fun downloads() {
+        val app = ApplicationProvider.getApplicationContext<TempoApp>()
+        val chart = runBlocking { app.container.charts.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL) }
+        val playable = Song(
+            id = "dQw4w9WgXcQ",
+            title = "Never Gonna Give You Up",
+            artist = "Rick Astley",
+            thumbnailUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+        )
+        runBlocking {
+            app.container.library.setLiked(playable, true)
+            app.container.downloads.download(listOf(playable, chart.entries[0].song, chart.entries[1].song))
+            // Robolectric doesn't start services on its own, so drive the queue directly.
+            app.container.downloads.runQueue { _, _, _ -> }
+        }
+        compose.waitForIdle()
+        clickText("Library")
+        settleImages(2000)
+        snap("11_library_downloads_row")
+        clickText("Downloaded")
+        settleImages()
+        snap("12_downloaded")
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("More")).onFirst().performClick()
+        settleImages(1500)
+        snap("13_song_menu")
     }
 }
 

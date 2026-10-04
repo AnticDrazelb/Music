@@ -1,6 +1,11 @@
 package app.tempo.music.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -45,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -55,13 +61,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import androidx.core.content.ContextCompat
 import app.tempo.music.AppContainer
 import app.tempo.music.MainActivity
 import app.tempo.music.data.model.ArtistRef
 import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.data.model.CollectionType
 import app.tempo.music.data.youtube.YouTubeUtils
+import app.tempo.music.ui.components.LocalDownloads
 import app.tempo.music.ui.components.LocalLikedIds
+import app.tempo.music.ui.components.LocalRequestNotificationPermission
 import app.tempo.music.ui.components.LocalNowPlaying
 import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.NowPlaying
@@ -124,7 +133,21 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
     var expanded by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var toast by remember { mutableStateOf<String?>(null) }
+    val downloads by container.downloads.statuses.collectAsState()
     val pendingIntent by incoming.collectAsState()
+    val context = LocalContext.current
+    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val requestNotifications: () -> Unit = {
+        val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted && !askedForNotifications) {
+            askedForNotifications = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val backStackEntry by navController.currentBackStackEntryAsState()
 
     LaunchedEffect(Unit) { player.connect() }
@@ -195,6 +218,8 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
         LocalSongMenu provides songMenu,
         LocalNowPlaying provides NowPlaying(playerState.current?.id, playerState.isPlaying),
         LocalLikedIds provides liked,
+        LocalDownloads provides downloads,
+        LocalRequestNotificationPermission provides requestNotifications,
     ) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             NavHost(

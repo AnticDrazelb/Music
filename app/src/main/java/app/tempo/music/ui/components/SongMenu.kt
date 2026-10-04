@@ -22,13 +22,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.tempo.music.data.download.DownloadState
 import app.tempo.music.data.model.Song
 import app.tempo.music.ui.navigation.LocalAppContainer
 import app.tempo.music.ui.navigation.LocalNavigator
@@ -119,6 +123,7 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val liked = target.song.id in LocalLikedIds.current
     val song = target.song
+    val downloadSongs = rememberDownloader()
 
     fun act(block: () -> Unit) {
         scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -150,8 +155,8 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
             SheetGroup {
                 SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to a Playlist…") { act { state.pickPlaylist(listOf(song)) } }
                 SheetAction(
-                    if (liked) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                    if (liked) "Undo Favorite" else "Favorite",
+                    if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    if (liked) "Remove from Favorites" else "Add to Favorites",
                     showDivider = target.playlistId != null,
                 ) { act { player.toggleLike(song) } }
                 if (target.playlistId != null && target.entryId != null) {
@@ -164,6 +169,25 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
                 }
             }
             SheetGroup {
+                val download = LocalDownloads.current[song.id]
+                when (download?.state) {
+                    DownloadState.DONE -> SheetAction(Icons.Rounded.DeleteOutline, "Remove Download") {
+                        act {
+                            container.downloads.remove(song.id)
+                            player.notify("Download removed")
+                        }
+                    }
+                    DownloadState.QUEUED, DownloadState.DOWNLOADING -> SheetAction(
+                        Icons.Rounded.Close,
+                        if (download.state == DownloadState.QUEUED) "Cancel Download"
+                        else "Cancel Download (${(download.progress * 100).toInt()}%)",
+                    ) {
+                        act { container.downloads.remove(song.id) }
+                    }
+                    else -> SheetAction(Icons.Rounded.Download, if (download?.state == DownloadState.FAILED) "Retry Download" else "Download") {
+                        act { downloadSongs(listOf(song)) }
+                    }
+                }
                 val artistUrl = song.artistUrl
                 if (artistUrl != null) {
                     SheetAction(Icons.Rounded.Person, "Go to Artist") {
@@ -272,7 +296,7 @@ private fun AddToPlaylistSheet(songs: List<Song>, state: SongMenuState) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${playlist.songCount} songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(songsLabel(playlist.songCount), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

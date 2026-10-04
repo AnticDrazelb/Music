@@ -12,6 +12,8 @@ import app.tempo.music.data.LibraryRepository
 import app.tempo.music.data.SettingsRepository
 import app.tempo.music.data.charts.ChartsRepository
 import app.tempo.music.data.db.MusicDatabase
+import app.tempo.music.data.download.AudioDownloader
+import app.tempo.music.data.download.DownloadRepository
 import app.tempo.music.data.youtube.StreamResolver
 import app.tempo.music.data.youtube.YouTubeRepository
 import app.tempo.music.playback.PlayerConnection
@@ -46,6 +48,14 @@ class AppContainer(context: Context) {
         settings.highQuality.value && !(settings.dataSaverOnCellular.value && NetworkState.isMetered(appContext))
     }
 
+    val downloads = DownloadRepository(
+        appContext,
+        database,
+        library,
+        AudioDownloader(httpClient, streamResolver),
+        appScope,
+    )
+
     /** Audio cache shared by the playback service (SimpleCache must be a singleton per folder). */
     val mediaCache: SimpleCache by lazy {
         SimpleCache(
@@ -61,6 +71,7 @@ class AppContainer(context: Context) {
 
     init {
         youtube.init(settings.country.value)
+        downloads.start()
         appScope.launch {
             settings.country.drop(1).collect { youtube.setCountry(it) }
         }

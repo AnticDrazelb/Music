@@ -94,6 +94,32 @@ data class PlaylistThumbRow(
     val thumbnailUrl: String?,
 )
 
+/** An offline copy of a song. State is one of [DownloadEntity.QUEUED] etc. */
+@Entity(tableName = "downloads")
+data class DownloadEntity(
+    @PrimaryKey val songId: String,
+    val state: String,
+    val filePath: String? = null,
+    val bytesDownloaded: Long = 0,
+    val totalBytes: Long = 0,
+    val createdAt: Long,
+    val completedAt: Long? = null,
+) {
+    companion object {
+        const val QUEUED = "QUEUED"
+        const val DOWNLOADING = "DOWNLOADING"
+        const val DONE = "DONE"
+        const val FAILED = "FAILED"
+    }
+}
+
+data class DownloadRow(
+    @Embedded val song: SongEntity,
+    @ColumnInfo(name = "dl_state") val state: String,
+    @ColumnInfo(name = "dl_bytes") val bytesDownloaded: Long,
+    @ColumnInfo(name = "dl_total") val totalBytes: Long,
+)
+
 data class PlaylistSongRow(
     @Embedded val song: SongEntity,
     @ColumnInfo(name = "entryId") val entryId: Long,

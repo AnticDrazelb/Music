@@ -31,34 +31,30 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Client for YouTube's public music charts (charts.youtube.com): weekly Top 100 songs,
- * music videos and artists for "global" and ~60 countries, plus daily trending videos.
+ * Client for YouTube's public music charts (charts.youtube.com): weekly Top 100 songs and
+ * artists for "global" and ~60 countries.
  */
 class ChartsRepository(private val client: OkHttpClient) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = ConcurrentHashMap<String, Pair<Long, Any>>()
 
+    /** Weekly Top 100 songs for [countryCode] ("global" or a two-letter code). */
     suspend fun chart(kind: ChartKind, countryCode: String): Chart {
-        require(kind != ChartKind.TOP_ARTISTS)
-        val code = normalize(kind, countryCode)
+        require(kind == ChartKind.TOP_SONGS)
+        val code = countryCode.lowercase()
         return cached("chart:$kind:$code") {
             val content = fetch(kind, code)
-            parseSongChart(kind, code, content)
+            parseSongChart(code, content)
         }
     }
 
     suspend fun artists(countryCode: String): ArtistChart {
-        val code = normalize(ChartKind.TOP_ARTISTS, countryCode)
+        val code = countryCode.lowercase()
         return cached("artists:$code") {
             val content = fetch(ChartKind.TOP_ARTISTS, code)
             parseArtistChart(code, content)
         }
-    }
-
-    private fun normalize(kind: ChartKind, countryCode: String): String {
-        val code = countryCode.lowercase()
-        return if (code == GLOBAL && !kind.supportsGlobal) "us" else code
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -69,7 +65,7 @@ class ChartsRepository(private val client: OkHttpClient) {
     }
 
     private suspend fun fetch(kind: ChartKind, code: String): JsonObject = withContext(Dispatchers.IO) {
-        val period = if (kind == ChartKind.TRENDING) "" else "&chart_params_period_type=WEEKLY"
+        val period = "&chart_params_period_type=WEEKLY"
         val body = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
@@ -105,53 +101,30 @@ class ChartsRepository(private val client: OkHttpClient) {
         }
     }
 
-    internal fun parseSongChart(kind: ChartKind, code: String, content: JsonObject): Chart {
-        val (list, items) = when (kind) {
-            ChartKind.TOP_SONGS -> content["trackTypes"].arr?.firstOrNull()?.jsonObj
-                .let { it to it?.get("trackViews").arr }
-            else -> content["videos"].arr?.firstOrNull()?.jsonObj
-                .let { it to it?.get("videoViews").arr }
-        }
-        val entries = items.orEmpty().mapIndexedNotNull { index, element ->
+    internal fun parseSongChart(code: String, content: JsonObject): Chart {
+        val list = content["trackTypes"].arr?.firstOrNull()?.jsonObj
+        val entries = list?.get("trackViews").arr.orEmpty().mapIndexedNotNull { index, element ->
             val e = element.jsonObj ?: return@mapIndexedNotNull null
             val meta = e["chartEntryMetadata"]?.jsonObj
             val rank = meta?.get("currentPosition").int ?: (index + 1)
             val previous = meta?.get("previousPosition").int
             val weeks = meta?.get("periodsOnChart").int ?: 0
             val artists = e["artists"].arr.orEmpty().mapNotNull { it.jsonObj?.get("name").str }
-            val song = when (kind) {
-                ChartKind.TOP_SONGS -> {
-                    // Prefer the "art track" (official audio with album art) over the music video.
-                    val id = e["atvExternalVideoId"].str?.takeIf { it.isNotBlank() }
-                        ?: e["encryptedVideoId"].str
-                        ?: return@mapIndexedNotNull null
-                    Song(
-                        id = id,
-                        title = e["name"].str ?: return@mapIndexedNotNull null,
-                        artist = artists.joinToString(", ").ifBlank { "Unknown Artist" },
-                        thumbnailUrl = YouTubeUtils.upscale(bestThumb(e)),
-                    )
-                }
-                else -> {
-                    val id = e["id"].str ?: return@mapIndexedNotNull null
-                    Song(
-                        id = id,
-                        title = YouTubeUtils.stripNoise(e["title"].str ?: return@mapIndexedNotNull null),
-                        artist = artists.joinToString(", ").ifBlank {
-                            YouTubeUtils.cleanArtist(e["channelName"].str)
-                        },
-                        artistUrl = e["externalChannelId"].str?.let { YouTubeUtils.channelUrl(it) },
-                        thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
-                        durationSec = e["videoDuration"].int?.toLong() ?: -1,
-                        isVideo = true,
-                    )
-                }
-            }
+            // Prefer the "art track" (official audio with album art) over the music video.
+            val id = e["atvExternalVideoId"].str?.takeIf { it.isNotBlank() }
+                ?: e["encryptedVideoId"].str
+                ?: return@mapIndexedNotNull null
+            val song = Song(
+                id = id,
+                title = e["name"].str ?: return@mapIndexedNotNull null,
+                artist = artists.joinToString(", ").ifBlank { "Unknown Artist" },
+                thumbnailUrl = YouTubeUtils.upscale(bestThumb(e)),
+            )
             ChartEntry(rank, previous?.takeIf { it > 0 }, weeks, song)
         }.sortedBy { it.rank }
 
         return Chart(
-            kind = kind,
+            kind = ChartKind.TOP_SONGS,
             countryCode = code,
             countryName = Countries.name(code),
             periodLabel = periodLabel(list),

@@ -51,7 +51,6 @@ import app.tempo.music.ui.components.LoadingBox
 import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.SectionHeader
 import app.tempo.music.ui.components.SongCard
-import app.tempo.music.ui.components.VideoCard
 import app.tempo.music.ui.components.dataOrNull
 import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalNavigator
@@ -74,8 +73,6 @@ data class HomeState(
     val country: String,
     val topGlobal: Load<Chart> = Load.Loading,
     val topLocal: Load<Chart> = Load.Loading,
-    val videos: Load<Chart> = Load.Loading,
-    val trending: Load<Chart> = Load.Loading,
     val artists: Load<ArtistChart> = Load.Loading,
     val shelves: List<Shelf> = emptyList(),
     val refreshing: Boolean = false,
@@ -119,8 +116,6 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val jobs = listOf(
             loadInto({ c.charts.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL) }) { copy(topGlobal = it) },
             loadInto({ c.charts.chart(ChartKind.TOP_SONGS, country) }) { copy(topLocal = it) },
-            loadInto({ c.charts.chart(ChartKind.TOP_VIDEOS, country) }) { copy(videos = it) },
-            loadInto({ c.charts.chart(ChartKind.TRENDING, country) }) { copy(trending = it) },
             loadInto({ c.charts.artists(country) }) { copy(artists = it) },
         )
         val shelves = pickShelves()
@@ -205,8 +200,8 @@ fun HomeScreen() {
                         }
                     }
                     item {
-                        PickCard("Trending", countryName, "Updated daily", Gradients.all[3]) {
-                            navigator.chart(ChartKind.TRENDING, state.country)
+                        PickCard("Top 40", "Global", "Updated weekly", Gradients.all[3]) {
+                            navigator.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL, limit = 40)
                         }
                     }
                 }
@@ -244,14 +239,9 @@ fun HomeScreen() {
                 }
             }
 
-            // ---- Music videos
-            videoShelf("Top Music Videos", state.videos) { navigator.chart(ChartKind.TOP_VIDEOS, state.country) }
-
             chartShelf("Top Songs: Global", state.topGlobal, onRetry = vm::refresh) {
                 navigator.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL)
             }
-
-            videoShelf("Trending Now", state.trending) { navigator.chart(ChartKind.TRENDING, state.country) }
 
             // ---- Playlist shelves
             state.shelves.forEach { shelf ->
@@ -321,24 +311,6 @@ private fun ChartGrid(chart: Chart) {
                         onMore = { menu.open(entry.song) },
                         showDivider = i < column.lastIndex,
                     )
-                }
-            }
-        }
-    }
-}
-
-private fun LazyListScope.videoShelf(title: String, chart: Load<Chart>, onSeeAll: () -> Unit) {
-    if (chart is Load.Failed) return
-    item(key = "video-header-$title") { SectionHeader(title, onClick = onSeeAll) }
-    item(key = "video-$title") {
-        val data = chart.dataOrNull
-        if (data == null) LoadingBox() else {
-            val player = LocalPlayer.current
-            val menu = LocalSongMenu.current
-            val songs = data.entries.map { it.song }
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(songs.take(20), key = { i, s -> "$i-${s.id}" }) { index, song ->
-                    VideoCard(song, onClick = { player.play(songs, index) }, onLongClick = { menu.open(song) })
                 }
             }
         }

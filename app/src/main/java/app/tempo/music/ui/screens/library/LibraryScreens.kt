@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -24,12 +25,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ArrowCircleDown
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -55,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.tempo.music.data.UserPlaylist
+import app.tempo.music.data.download.DownloadState
 import app.tempo.music.data.model.ArtistRef
 import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.data.model.CollectionType
@@ -63,6 +67,7 @@ import app.tempo.music.ui.components.ArtistRow
 import app.tempo.music.ui.components.CollectionCard
 import app.tempo.music.ui.components.CollectionRow
 import app.tempo.music.ui.components.DetailScaffold
+import app.tempo.music.ui.components.DownloadAllButton
 import app.tempo.music.ui.components.EmptyState
 import app.tempo.music.ui.components.LargeTitle
 import app.tempo.music.ui.components.LocalSongMenu
@@ -75,7 +80,11 @@ import app.tempo.music.ui.components.SectionHeader
 import app.tempo.music.ui.components.SongCard
 import app.tempo.music.ui.components.SongRow
 import app.tempo.music.ui.components.belowTopBar
+import app.tempo.music.ui.components.formatBytes
 import app.tempo.music.ui.components.formatDuration
+import app.tempo.music.ui.components.songsLabel
+import app.tempo.music.ui.components.CircleIconButton
+import app.tempo.music.ui.components.rememberDownloader
 import app.tempo.music.ui.navigation.LibrarySection
 import app.tempo.music.ui.navigation.LocalAppContainer
 import app.tempo.music.ui.navigation.LocalNavigator
@@ -100,10 +109,11 @@ fun LibraryScreen() {
             }
         }
         item { MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, "Playlists", { navigator.library(LibrarySection.PLAYLISTS) }) }
-        item { MenuRow(Icons.Rounded.Star, "Favorite Songs", { navigator.library(LibrarySection.FAVORITES) }) }
+        item { MenuRow(Icons.Rounded.Favorite, "Favorite Songs", { navigator.library(LibrarySection.FAVORITES) }) }
         item { MenuRow(Icons.Rounded.History, "Recently Played", { navigator.library(LibrarySection.RECENT) }) }
         item { MenuRow(Icons.Rounded.Album, "Albums", { navigator.library(LibrarySection.ALBUMS) }) }
-        item { MenuRow(Icons.Rounded.Mic, "Artists", { navigator.library(LibrarySection.ARTISTS) }, showDivider = false) }
+        item { MenuRow(Icons.Rounded.Mic, "Artists", { navigator.library(LibrarySection.ARTISTS) }) }
+        item { MenuRow(Icons.Rounded.ArrowCircleDown, "Downloaded", { navigator.library(LibrarySection.DOWNLOADS) }, showDivider = false) }
 
         item { SectionHeader("Your Playlists") }
         val tiles: List<UserPlaylist?> = listOf<UserPlaylist?>(null) + playlists
@@ -118,7 +128,7 @@ fun LibraryScreen() {
                     } else {
                         MediaCard(
                             title = playlist.name,
-                            subtitle = "${playlist.songCount} songs",
+                            subtitle = songsLabel(playlist.songCount),
                             imageUrl = null,
                             onClick = { navigator.userPlaylist(playlist.id) },
                             modifier = Modifier.weight(1f),
@@ -176,6 +186,10 @@ fun LibrarySectionScreen(sectionName: String) {
     val recent by remember { container.library.recentlyPlayed(200) }.collectAsState(initial = emptyList())
     val playlists by container.library.userPlaylists.collectAsState(initial = emptyList())
     val saved by container.library.savedItems.collectAsState(initial = emptyList())
+    val downloads by container.downloads.items.collectAsState(initial = emptyList())
+    val downloadedBytes by container.downloads.totalBytes.collectAsState(initial = 0L)
+    var confirmRemoveDownloads by remember { mutableStateOf(false) }
+    val downloadSongs = rememberDownloader()
 
     DetailScaffold(
         title = section.title,
@@ -185,6 +199,14 @@ fun LibrarySectionScreen(sectionName: String) {
                 TextButton(onClick = { scope.launch { container.library.clearHistory() } }) {
                     Text("Clear", color = MaterialTheme.colorScheme.primary)
                 }
+            }
+            if (section == LibrarySection.FAVORITES && liked.isNotEmpty()) {
+                DownloadAllButton(liked)
+                Spacer(Modifier.width(12.dp))
+            }
+            if (section == LibrarySection.DOWNLOADS && downloads.isNotEmpty()) {
+                CircleIconButton(Icons.Rounded.DeleteOutline, "Remove all downloads", onClick = { confirmRemoveDownloads = true })
+                Spacer(Modifier.width(12.dp))
             }
         },
     ) { padding ->
@@ -202,7 +224,7 @@ fun LibrarySectionScreen(sectionName: String) {
                     if (songs.isEmpty()) {
                         item {
                             if (section == LibrarySection.FAVORITES) {
-                                EmptyState(Icons.Rounded.Star, "No Favorites Yet", "Tap ⋯ on any song and choose Favorite to save it here.")
+                                EmptyState(Icons.Rounded.Favorite, "No Favorites Yet", "Tap the heart on any song to save it here.")
                             } else {
                                 EmptyState(Icons.Rounded.History, "Nothing Played Yet", "Songs you play will show up here.")
                             }
@@ -227,7 +249,7 @@ fun LibrarySectionScreen(sectionName: String) {
                         }
                     }
                     items(playlists, key = { "user-${it.id}" }) { p ->
-                        NavigationRow(title = p.name, subtitle = "${p.songCount} songs", onClick = { navigator.userPlaylist(p.id) }) {
+                        NavigationRow(title = p.name, subtitle = songsLabel(p.songCount), onClick = { navigator.userPlaylist(p.id) }) {
                             Mosaic(p.thumbnails, Modifier.size(56.dp), RoundedCornerShape(6.dp), key = p.name)
                         }
                     }
@@ -258,8 +280,76 @@ fun LibrarySectionScreen(sectionName: String) {
                     }
                     items(artists, key = { it.url }) { ref -> ArtistRow(ref, onClick = { navigator.artist(ref) }) }
                 }
+                LibrarySection.DOWNLOADS -> {
+                    val done = downloads.filter { it.status.state == DownloadState.DONE }.map { it.song }
+                    val pending = downloads.filter { it.status.state != DownloadState.DONE }
+                    if (downloads.isEmpty()) {
+                        item {
+                            EmptyState(
+                                Icons.Rounded.ArrowCircleDown,
+                                "No Downloads",
+                                "Tap ⋯ on any song and choose Download, or use the download button on an album or playlist, to listen offline.",
+                            )
+                        }
+                    }
+                    if (done.isNotEmpty()) {
+                        item {
+                            PlayShuffleButtons(onPlay = { player.play(done) }, onShuffle = { player.play(done, shuffle = true) })
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                    if (pending.isNotEmpty()) {
+                        val active = pending.any { it.status.state != DownloadState.FAILED }
+                        item { SectionHeader(if (active) "Downloading" else "Couldn't Download", subtitle = songsLabel(pending.size)) }
+                        items(pending, key = { "pending-${it.song.id}" }) { item ->
+                            val status = when (item.status.state) {
+                                DownloadState.QUEUED -> "Waiting to download"
+                                DownloadState.DOWNLOADING -> "Downloading… ${(item.status.progress * 100).toInt()}%"
+                                else -> "Download failed · tap to retry"
+                            }
+                            SongRow(
+                                song = item.song,
+                                onClick = { if (item.status.state == DownloadState.FAILED) downloadSongs(listOf(item.song)) },
+                                onMore = { menu.open(item.song) },
+                                subtitle = status,
+                            )
+                        }
+                        if (done.isNotEmpty()) item { SectionHeader("Downloaded") }
+                    }
+                    itemsIndexed(done, key = { _, s -> "done-${s.id}" }) { index, song ->
+                        SongRow(song, onClick = { player.play(done, index) }, onMore = { menu.open(song) })
+                    }
+                    if (done.isNotEmpty()) {
+                        item {
+                            Text(
+                                "${songsLabel(done.size)} · ${formatBytes(downloadedBytes)} · Available offline",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(20.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+
+    if (confirmRemoveDownloads) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveDownloads = false },
+            title = { Text("Remove all downloads?") },
+            text = { Text("Songs stay in your library and playlists, but won't play offline.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveDownloads = false
+                    container.downloads.removeAll()
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveDownloads = false }) { Text("Cancel", color = MaterialTheme.colorScheme.primary) }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        )
     }
 }
 
@@ -283,6 +373,7 @@ fun UserPlaylistScreen(id: Long) {
         title = name,
         listState = listState,
         actions = {
+            DownloadAllButton(songs)
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Rounded.MoreHoriz, "More", tint = MaterialTheme.colorScheme.primary)
@@ -317,7 +408,7 @@ fun UserPlaylistScreen(id: Long) {
                     val totalSec = songs.sumOf { it.durationSec.coerceAtLeast(0) }
                     Text(
                         buildString {
-                            append("${songs.size} songs")
+                            append(songsLabel(songs.size))
                             if (totalSec > 0) append(" · ${formatDuration(totalSec)}")
                         },
                         style = MaterialTheme.typography.bodySmall,

@@ -1,6 +1,8 @@
 package app.tempo.music.data
 
 import app.tempo.music.data.charts.ChartsRepository
+import app.tempo.music.data.download.AudioDownloader
+import app.tempo.music.data.download.DownloadCancelledException
 import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.SearchFilter
 import app.tempo.music.data.model.Song
@@ -16,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.BeforeClass
 import org.junit.Test
+import java.io.File
 
 /**
  * Hits the real YouTube endpoints. Skipped unless run with -Dlive=true, because results
@@ -49,15 +52,9 @@ class LiveApiTest {
     }
 
     @Test
-    fun otherCharts() = runBlocking {
-        val videos = charts.chart(ChartKind.TOP_VIDEOS, "us")
-        val trending = charts.chart(ChartKind.TRENDING, "us")
+    fun artistChart() = runBlocking {
         val artists = charts.artists("us")
-        println("videos=${videos.entries.size} trending=${trending.entries.size} artists=${artists.entries.size}")
-        println("  video #1 ${videos.entries.first().song}")
-        println("  artist #1 ${artists.entries.first().artist}")
-        assertTrue(videos.entries.size >= 50)
-        assertTrue(trending.entries.isNotEmpty())
+        println("artists=${artists.entries.size} #1 ${artists.entries.first().artist}")
         assertTrue(artists.entries.size >= 50)
     }
 
@@ -69,7 +66,8 @@ class LiveApiTest {
             // Albums need YouTube Music's catalogue, which isn't served to every IP/region.
             if (filter != SearchFilter.ALBUMS) assertTrue("$filter returned nothing", page.items.isNotEmpty())
         }
-        val more = youtube.search("taylor swift", SearchFilter.VIDEOS).let { youtube.search("taylor swift", SearchFilter.VIDEOS, it.nextPage) }
+        val first = youtube.search("taylor swift", SearchFilter.PLAYLISTS)
+        val more = youtube.search("taylor swift", SearchFilter.PLAYLISTS, first.nextPage)
         assertTrue(more.items.isNotEmpty())
 
         val suggestions = youtube.suggestions("tayl")
@@ -88,8 +86,8 @@ class LiveApiTest {
         assertTrue(radio.size >= 10)
 
         val artist = youtube.artist("https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw")
-        println("artist ${artist.ref} top=${artist.topSongs.size} latest=${artist.latest.size} albums=${artist.albums.size} playlists=${artist.playlists.size}")
-        assertTrue(artist.latest.isNotEmpty())
+        println("artist ${artist.ref} top=${artist.topSongs.size} albums=${artist.albums.size} playlists=${artist.playlists.size}")
+        assertTrue(artist.topSongs.isNotEmpty())
 
         val resolver = StreamResolver(youtube) { true }
         val resolved = resolver.resolve("dQw4w9WgXcQ")
@@ -119,5 +117,36 @@ class LiveApiTest {
             assertTrue(response.code in 200..206)
             assertTrue(total > 1_000_000)
         }
+    }
+
+    @Test
+    fun downloadsAudioInChunks() {
+        val dir = kotlin.io.path.createTempDirectory("tempo-dl").toFile()
+        val resolver = StreamResolver(youtube) { true }
+        // Small chunks so the download needs several ranged requests.
+        val downloader = AudioDownloader(client, resolver, chunkSize = 512L * 1024)
+        var lastProgress = 0L
+        val started = System.currentTimeMillis()
+        val file = downloader.download("dQw4w9WgXcQ", dir, onProgress = { done, total ->
+            assertTrue(total <= 0 || done <= total)
+            lastProgress = done
+        })
+        val header = file.inputStream().use { it.readNBytes(12) }
+        val isWebm = header.take(4) == listOf(0x1A, 0x45, 0xDF.toByte(), 0xA3.toByte()).map { it.toByte() }
+        val isMp4 = String(header.copyOfRange(4, 8)) == "ftyp"
+        println("downloaded ${file.name} ${file.length()} bytes in ${System.currentTimeMillis() - started}ms webm=$isWebm mp4=$isMp4")
+        assertTrue(file.length() > 1_000_000)
+        assertEquals(file.length(), lastProgress)
+        assertTrue(isWebm || isMp4)
+        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".part") })
+
+        // Cancelling mid-way throws and leaves no partial file behind.
+        var bytes = 0L
+        val result = runCatching {
+            downloader.download("dQw4w9WgXcQ", File(dir, "cancel"), isCancelled = { bytes > 600_000 }, onProgress = { done, _ -> bytes = done })
+        }
+        assertTrue(result.exceptionOrNull() is DownloadCancelledException)
+        assertTrue(File(dir, "cancel").listFiles().orEmpty().isEmpty())
+        dir.deleteRecursively()
     }
 }

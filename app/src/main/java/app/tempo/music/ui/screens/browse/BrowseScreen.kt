@@ -73,8 +73,6 @@ fun BrowseScreen() {
         ChartTile(ChartKind.TOP_SONGS, country, 100, "Top 100", countryName, "Top 100: $countryName"),
         ChartTile(ChartKind.TOP_SONGS, global, 40, "Top 40", "Global", "Top 40: Global"),
         ChartTile(ChartKind.TOP_SONGS, country, 40, "Top 40", countryName, "Top 40: $countryName"),
-        ChartTile(ChartKind.TOP_VIDEOS, country, 100, "Top Videos", countryName, "Top Music Videos"),
-        ChartTile(ChartKind.TRENDING, country, 100, "Trending", countryName, "Trending Now"),
         ChartTile(ChartKind.TOP_ARTISTS, country, 100, "Top Artists", countryName, "Top Artists"),
     )
 

@@ -54,6 +54,7 @@ class PlaybackService : MediaSessionService() {
             container.httpClient,
             container.streamResolver,
             container.mediaCache,
+            container.downloads::fileFor,
         )
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))

@@ -59,7 +59,6 @@ data class ArtistDetail(
     val bannerUrl: String?,
     val description: String?,
     val topSongs: List<Song>,
-    val latest: List<Song>,
     val albums: List<CollectionRef>,
     val playlists: List<CollectionRef>,
 )
@@ -71,16 +70,13 @@ enum class SearchFilter(val label: String) {
     ALBUMS("Albums"),
     ARTISTS("Artists"),
     PLAYLISTS("Playlists"),
-    VIDEOS("Videos"),
 }
 
 // ---- Charts ----
 
-enum class ChartKind(val apiType: String, val title: String, val supportsGlobal: Boolean) {
-    TOP_SONGS("TRACKS", "Top Songs", true),
-    TOP_VIDEOS("VIDEOS", "Top Music Videos", true),
-    TRENDING("TRENDING_VIDEOS", "Trending", false),
-    TOP_ARTISTS("ARTISTS", "Top Artists", true),
+enum class ChartKind(val apiType: String, val title: String) {
+    TOP_SONGS("TRACKS", "Top Songs"),
+    TOP_ARTISTS("ARTISTS", "Top Artists"),
 }
 
 data class ChartEntry(

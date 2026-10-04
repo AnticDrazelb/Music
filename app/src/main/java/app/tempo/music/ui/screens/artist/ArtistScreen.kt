@@ -53,7 +53,6 @@ import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.PillButton
 import app.tempo.music.ui.components.SectionHeader
 import app.tempo.music.ui.components.SongRow
-import app.tempo.music.ui.components.VideoCard
 import app.tempo.music.ui.components.formatCount
 import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalNavigator
@@ -194,16 +193,6 @@ fun ArtistScreen(initial: ArtistRef) {
                         item {
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 itemsIndexed(a.albums, key = { i, ref -> "album-$i-${ref.url}" }) { _, ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
-                            }
-                        }
-                    }
-                    if (a.latest.isNotEmpty()) {
-                        item { SectionHeader("Latest Releases") }
-                        item {
-                            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(a.latest, key = { i, s -> "latest-$i-${s.id}" }) { index, song ->
-                                    VideoCard(song, onClick = { player.play(a.latest, index) }, onLongClick = { menu.open(song) }, width = 240.dp)
-                                }
                             }
                         }
                     }

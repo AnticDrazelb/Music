@@ -74,32 +74,35 @@ class YouTubeRepository(private val client: OkHttpClient) {
                 SearchFilter.ALBUMS -> YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS
                 SearchFilter.ARTISTS -> YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS
                 SearchFilter.PLAYLISTS -> YoutubeSearchQueryHandlerFactory.MUSIC_PLAYLISTS
-                SearchFilter.VIDEOS -> YoutubeSearchQueryHandlerFactory.VIDEOS
             }
-            val handler = service.searchQHFactory.fromQuery(query, listOf(contentFilter), "")
-            val (raw, next) = if (page == null) {
-                val info = SearchInfo.getInfo(service, handler)
-                info.relatedItems to info.nextPage
-            } else {
-                val more = SearchInfo.getMoreItems(service, handler, page as NewPipePage)
-                more.items to more.nextPage
-            }
-            val isMusic = filter != SearchFilter.VIDEOS
+            val (raw, next) = rawSearch(query, contentFilter, page)
             val type = if (filter == SearchFilter.ALBUMS) CollectionType.ALBUM else CollectionType.PLAYLIST
-            val items = raw.mapNotNull { it.toMusicItem(isMusic, type) }
+            val items = raw.mapNotNull { it.toMusicItem(isMusic = true, collectionType = type) }
                 .let { list -> if (filter == SearchFilter.SONGS) list.filterIsInstance<Song>() else list }
                 .distinctBy { it.key }
 
             if (page == null && items.isEmpty() && filter == SearchFilter.SONGS) {
                 // The YouTube Music catalogue isn't offered in every region; fall back to
                 // regular YouTube results so search still finds something playable.
-                val fallback = search(query, SearchFilter.VIDEOS, null)
-                // Skip hour-long compilations; they aren't songs.
-                val songs = fallback.items.filterIsInstance<Song>().filter { it.durationSec <= MAX_SONG_SECONDS }
-                return@withContext Page(songs, fallback.nextPage)
+                val (videos, videosNext) = rawSearch(query, YoutubeSearchQueryHandlerFactory.VIDEOS, null)
+                val songs = videos.mapNotNull { it.toSong(isMusic = false) }
+                    .filter { it.durationSec <= MAX_SONG_SECONDS } // skip hour-long compilations
+                    .distinctBy { it.id }
+                return@withContext Page(songs, videosNext?.takeIf { NewPipePage.isValid(it) })
             }
             Page(items, next?.takeIf { NewPipePage.isValid(it) })
         }
+
+    private fun rawSearch(query: String, contentFilter: String, page: Any?): Pair<List<InfoItem>, NewPipePage?> {
+        val handler = service.searchQHFactory.fromQuery(query, listOf(contentFilter), "")
+        return if (page == null) {
+            val info = SearchInfo.getInfo(service, handler)
+            info.relatedItems to info.nextPage
+        } else {
+            val more = SearchInfo.getMoreItems(service, handler, page as NewPipePage)
+            more.items to more.nextPage
+        }
+    }
 
     suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
         if (query.isBlank()) emptyList() else service.suggestionExtractor.suggestionList(query)
@@ -191,11 +194,6 @@ class YouTubeRepository(private val client: OkHttpClient) {
         val albumsTab = tab(ChannelTabs.ALBUMS)
         val playlistsTab = tab(ChannelTabs.PLAYLISTS)
 
-        val latest = async(Dispatchers.IO) {
-            videosTab?.let { t ->
-                runCatching { ChannelTabInfo.getInfo(service, t).relatedItems }.getOrNull()
-            }.orEmpty().filterIsInstance<StreamInfoItem>().mapNotNull { it.toSong(isMusic = false) }
-        }
         val albums = async(Dispatchers.IO) {
             albumsTab?.let { t ->
                 runCatching { ChannelTabInfo.getInfo(service, t).relatedItems }.getOrNull()
@@ -207,12 +205,22 @@ class YouTubeRepository(private val client: OkHttpClient) {
             }.orEmpty().mapNotNull { it.toMusicItem(true, CollectionType.PLAYLIST) as? CollectionRef }
         }
         val top = async {
-            runCatching { songsFor(name) }.getOrDefault(emptyList())
+            val songs = runCatching { songsFor(name) }.getOrDefault(emptyList())
                 .filter { it.artist.contains(name, ignoreCase = true) }
                 .take(10)
+            // Fall back to the channel's uploads when the music catalogue has nothing.
+            songs.ifEmpty {
+                withContext(Dispatchers.IO) {
+                    videosTab?.let { t ->
+                        runCatching { ChannelTabInfo.getInfo(service, t).relatedItems }.getOrNull()
+                    }.orEmpty().filterIsInstance<StreamInfoItem>()
+                        .mapNotNull { it.toSong(isMusic = false) }
+                        .filter { it.durationSec <= MAX_SONG_SECONDS }
+                        .take(10)
+                }
+            }
         }
 
-        val latestSongs = latest.await()
         ArtistDetail(
             ref = ArtistRef(
                 url = url,
@@ -222,8 +230,7 @@ class YouTubeRepository(private val client: OkHttpClient) {
             ),
             bannerUrl = info.banners.maxByOrNull { it.width }?.url,
             description = info.description,
-            topSongs = top.await().ifEmpty { latestSongs.take(10) },
-            latest = latestSongs,
+            topSongs = top.await(),
             albums = albums.await(),
             playlists = playlists.await(),
         )

@@ -19,12 +19,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import app.tempo.music.BuildConfig
 import app.tempo.music.data.charts.Countries
+import app.tempo.music.data.download.DownloadState
+import app.tempo.music.ui.components.formatBytes
+import app.tempo.music.ui.components.songsLabel
+import app.tempo.music.ui.navigation.LibrarySection
+import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.components.DetailScaffold
 import app.tempo.music.ui.components.belowTopBar
 import app.tempo.music.ui.navigation.LocalAppContainer
@@ -60,6 +67,10 @@ fun SettingsScreen() {
     val dataSaver by container.settings.dataSaverOnCellular.collectAsState()
     val country by container.settings.country.collectAsState()
     var pickCountry by remember { mutableStateOf(false) }
+    var confirmRemoveDownloads by remember { mutableStateOf(false) }
+    val downloads by container.downloads.items.collectAsState(initial = emptyList())
+    val downloadedBytes by container.downloads.totalBytes.collectAsState(initial = 0L)
+    val navigator = LocalNavigator.current
 
     DetailScaffold(title = "Settings", listState = listState) { padding ->
         LazyColumn(
@@ -89,7 +100,14 @@ fun SettingsScreen() {
                 }
             }
             item {
-                Group("Storage") {
+                Group("Storage", "Downloaded songs play without an internet connection.") {
+                    val doneCount = downloads.count { it.status.state == DownloadState.DONE }
+                    ValueRow("Downloads", "${songsLabel(doneCount)} · ${formatBytes(downloadedBytes)}") {
+                        navigator.library(LibrarySection.DOWNLOADS)
+                    }
+                    if (downloads.isNotEmpty()) {
+                        ActionRow("Remove All Downloads") { confirmRemoveDownloads = true }
+                    }
                     ActionRow("Clear Listening History") {
                         scope.launch {
                             container.library.clearHistory()
@@ -123,6 +141,25 @@ fun SettingsScreen() {
                 }
             }
         }
+    }
+
+    if (confirmRemoveDownloads) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveDownloads = false },
+            title = { Text("Remove all downloads?") },
+            text = { Text("Songs stay in your library and playlists, but won't play offline.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveDownloads = false
+                    container.downloads.removeAll()
+                    player.notify("Downloads removed")
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveDownloads = false }) { Text("Cancel", color = MaterialTheme.colorScheme.primary) }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        )
     }
 
     if (pickCountry) {

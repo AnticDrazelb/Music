@@ -50,6 +50,61 @@ interface SongDao {
 
     @Query("UPDATE songs SET lastPlayedAt = NULL, playCount = 0")
     suspend fun clearHistory()
+
+    @Query("SELECT * FROM songs WHERE id = :id")
+    suspend fun get(id: String): SongEntity?
+}
+
+@Dao
+interface DownloadDao {
+    @Upsert
+    suspend fun upsert(download: DownloadEntity)
+
+    @Query("SELECT * FROM downloads WHERE songId = :id")
+    suspend fun get(id: String): DownloadEntity?
+
+    @Query("DELETE FROM downloads WHERE songId = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM downloads")
+    suspend fun deleteAll()
+
+    @Query("SELECT * FROM downloads")
+    fun observeAll(): Flow<List<DownloadEntity>>
+
+    @Query(
+        """SELECT s.*, d.state AS dl_state, d.bytesDownloaded AS dl_bytes, d.totalBytes AS dl_total
+           FROM downloads d JOIN songs s ON s.id = d.songId
+           ORDER BY d.createdAt DESC""",
+    )
+    fun observeRows(): Flow<List<DownloadRow>>
+
+    @Query("SELECT * FROM downloads WHERE state = 'DONE'")
+    suspend fun completed(): List<DownloadEntity>
+
+    @Query("SELECT songId FROM downloads")
+    suspend fun allIds(): List<String>
+
+    @Query("SELECT * FROM downloads WHERE state = 'QUEUED' ORDER BY createdAt LIMIT 1")
+    suspend fun nextQueued(): DownloadEntity?
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE state IN ('QUEUED', 'DOWNLOADING')")
+    suspend fun pendingCount(): Int
+
+    @Query("UPDATE downloads SET state = 'QUEUED' WHERE state = 'DOWNLOADING'")
+    suspend fun requeueInterrupted()
+
+    @Query("UPDATE downloads SET state = :state WHERE songId = :id")
+    suspend fun setState(id: String, state: String)
+
+    @Query("UPDATE downloads SET bytesDownloaded = :bytes, totalBytes = :total WHERE songId = :id")
+    suspend fun setProgress(id: String, bytes: Long, total: Long)
+
+    @Query(
+        """UPDATE downloads SET state = 'DONE', filePath = :path, bytesDownloaded = :bytes,
+           totalBytes = :bytes, completedAt = :time WHERE songId = :id""",
+    )
+    suspend fun markDone(id: String, path: String, bytes: Long, time: Long)
 }
 
 @Dao

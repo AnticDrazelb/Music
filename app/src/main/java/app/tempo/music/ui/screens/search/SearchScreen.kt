@@ -428,7 +428,6 @@ private fun ResultsList(
                                 onClick = { player.playSong(item) },
                                 onMore = { menu.open(item) },
                                 subtitle = listOfNotNull(
-                                    if (item.isVideo && filter == SearchFilter.VIDEOS) "Video" else null,
                                     item.artist,
                                     formatDuration(item.durationSec).takeIf { it.isNotEmpty() },
                                 ).joinToString(" · "),
