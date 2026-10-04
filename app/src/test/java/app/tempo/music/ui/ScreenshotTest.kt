@@ -201,6 +201,15 @@ open class ScreenshotTest {
     }
 
     @Test
+    fun settings() {
+        clickText("Library")
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Settings")).onFirst().performClick()
+        waitForText("Crossfade")
+        settleImages(1000)
+        snap("14_settings")
+    }
+
+    @Test
     fun downloads() {
         val app = ApplicationProvider.getApplicationContext<TempoApp>()
         val chart = runBlocking { app.container.charts.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL) }

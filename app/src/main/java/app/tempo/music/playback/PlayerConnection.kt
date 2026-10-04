@@ -63,6 +63,7 @@ class PlayerConnection(
     private val library: LibraryRepository,
     private val youtube: YouTubeRepository,
     private val scope: CoroutineScope,
+    private val stopAfterCurrentSong: MutableStateFlow<Boolean> = MutableStateFlow(false),
 ) {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
@@ -298,6 +299,7 @@ class PlayerConnection(
     fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
         _sleepTimerEnd.value = null
+        stopAfterCurrentSong.value = false
         if (minutes == 0) {
             _messages.tryEmit("Sleep timer off")
             return
@@ -310,10 +312,12 @@ class PlayerConnection(
         }
         val end = System.currentTimeMillis() + delayMs
         _sleepTimerEnd.value = end
+        stopAfterCurrentSong.value = minutes < 0
         sleepJob = scope.launch {
             delay(delayMs)
             controller?.pause()
             _sleepTimerEnd.value = null
+            stopAfterCurrentSong.value = false
         }
         _messages.tryEmit(if (minutes < 0) "Stopping after this song" else "Sleep timer: $minutes min")
     }

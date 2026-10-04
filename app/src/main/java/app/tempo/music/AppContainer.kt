@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -71,8 +72,11 @@ class AppContainer(context: Context) {
         )
     }
 
+    /** Set while the "end of song" sleep timer runs, so that song isn't crossfaded away. */
+    val stopAfterCurrentSong = MutableStateFlow(false)
+
     val playerConnection: PlayerConnection by lazy {
-        PlayerConnection(appContext, library, youtube, appScope)
+        PlayerConnection(appContext, library, youtube, appScope, stopAfterCurrentSong)
     }
 
     init {

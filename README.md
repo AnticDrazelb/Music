@@ -32,6 +32,9 @@ An Apple Music–style music player for Android that streams from YouTube.
   paused. Includes a scrubber, volume, a ♥ favourite button, share, and a queue with
   shuffle, repeat, autoplay, drag-to-reorder and swipe-to-remove. The sleep timer is in the
   ⋯ menu.
+- **Crossfade**: the end of each song blends into the start of the next, like Apple Music.
+  On by default at 6 seconds. Turn it off or set 1–12 seconds in Settings → Playback.
+  Skipping, seeking or pausing cuts straight over with no fade.
 - **Lyrics**: time-synced lyrics that follow the song, with the current line highlighted.
   Tap a line to jump to it. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
   the device after the first view, so they also show offline.
@@ -47,7 +50,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.2.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.3.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
@@ -76,6 +79,7 @@ sign an APK that Android will accept as an update to Tempo.
 | YouTube | [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) for search, stream URLs, playlists, channels and radio mixes |
 | Charts | `charts.youtube.com` browse API (`data/charts/ChartsRepository.kt`) |
 | Storage | Room for playlists, favourites, history and the download queue. DataStore for settings. |
+| Crossfade | `playback/Crossfader.kt`. ExoPlayer plays one song at a time, so a second, hidden player loads the last seconds of the current song in advance. When the main player reaches the fade point (a position-triggered `PlayerMessage`), it moves on to the next song while the hidden player finishes the old one, and their volumes follow equal-power (sin/cos) curves. |
 | Downloads | `data/download/`. Chunked, resumable range requests in a foreground service. Files are kept in the app's private music folder. |
 
 ## Caveats

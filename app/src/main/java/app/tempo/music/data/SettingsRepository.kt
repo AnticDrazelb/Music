@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.tempo.music.data.charts.Countries
@@ -26,6 +27,8 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val highQuality = booleanPreferencesKey("high_quality")
         val autoplay = booleanPreferencesKey("autoplay")
         val dataSaverOnCellular = booleanPreferencesKey("data_saver_cellular")
+        val crossfade = booleanPreferencesKey("crossfade")
+        val crossfadeSeconds = intPreferencesKey("crossfade_seconds")
     }
 
     private val prefs: Flow<Preferences> = context.dataStore.data
@@ -47,9 +50,24 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     val dataSaverOnCellular: StateFlow<Boolean> = prefs.map { it[Keys.dataSaverOnCellular] ?: false }
         .stateIn(scope, SharingStarted.Eagerly, initial[Keys.dataSaverOnCellular] ?: false)
 
+    /** Blend the end of each song into the next. */
+    val crossfade: StateFlow<Boolean> = prefs.map { it[Keys.crossfade] ?: true }
+        .stateIn(scope, SharingStarted.Eagerly, initial[Keys.crossfade] ?: true)
+
+    val crossfadeSeconds: StateFlow<Int> = prefs.map { it[Keys.crossfadeSeconds] ?: DEFAULT_CROSSFADE_SECONDS }
+        .stateIn(scope, SharingStarted.Eagerly, initial[Keys.crossfadeSeconds] ?: DEFAULT_CROSSFADE_SECONDS)
+
     suspend fun setCountry(code: String) = context.dataStore.edit { it[Keys.country] = code.uppercase() }
     suspend fun setHighQuality(value: Boolean) = context.dataStore.edit { it[Keys.highQuality] = value }
     suspend fun setAutoplay(value: Boolean) = context.dataStore.edit { it[Keys.autoplay] = value }
     suspend fun setDataSaverOnCellular(value: Boolean) =
         context.dataStore.edit { it[Keys.dataSaverOnCellular] = value }
+    suspend fun setCrossfade(value: Boolean) = context.dataStore.edit { it[Keys.crossfade] = value }
+    suspend fun setCrossfadeSeconds(value: Int) =
+        context.dataStore.edit { it[Keys.crossfadeSeconds] = value.coerceIn(CROSSFADE_RANGE) }
+
+    companion object {
+        const val DEFAULT_CROSSFADE_SECONDS = 6
+        val CROSSFADE_RANGE = 1..12
+    }
 }

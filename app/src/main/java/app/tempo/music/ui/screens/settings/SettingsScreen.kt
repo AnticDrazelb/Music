@@ -23,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,8 +41,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.media3.common.util.UnstableApi
 import app.tempo.music.BuildConfig
+import app.tempo.music.data.SettingsRepository
 import app.tempo.music.data.charts.Countries
 import app.tempo.music.data.download.DownloadState
 import app.tempo.music.ui.components.formatBytes
@@ -55,6 +66,7 @@ import app.tempo.music.ui.screens.browse.CountryPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen() {
@@ -65,6 +77,8 @@ fun SettingsScreen() {
     val autoplay by container.settings.autoplay.collectAsState()
     val highQuality by container.settings.highQuality.collectAsState()
     val dataSaver by container.settings.dataSaverOnCellular.collectAsState()
+    val crossfade by container.settings.crossfade.collectAsState()
+    val crossfadeSeconds by container.settings.crossfadeSeconds.collectAsState()
     val country by container.settings.country.collectAsState()
     var pickCountry by remember { mutableStateOf(false) }
     var confirmRemoveDownloads by remember { mutableStateOf(false) }
@@ -86,7 +100,17 @@ fun SettingsScreen() {
                 )
             }
             item {
-                Group("Playback", "Autoplay keeps the music going with similar songs when your queue ends.") {
+                Group(
+                    "Playback",
+                    "Crossfade blends the end of each song into the next. Autoplay keeps the music going " +
+                        "with similar songs when your queue ends.",
+                ) {
+                    SwitchRow("Crossfade", crossfade) { v -> scope.launch { container.settings.setCrossfade(v) } }
+                    if (crossfade) {
+                        SecondsSliderRow(crossfadeSeconds, SettingsRepository.CROSSFADE_RANGE) { v ->
+                            scope.launch { container.settings.setCrossfadeSeconds(v) }
+                        }
+                    }
                     SwitchRow("Autoplay", autoplay) { v -> scope.launch { container.settings.setAutoplay(v) } }
                     SwitchRow("High Quality Audio", highQuality) { v -> scope.launch { container.settings.setHighQuality(v) } }
                     SwitchRow("Data Saver on Mobile Data", dataSaver, last = true) { v ->
@@ -231,6 +255,52 @@ private fun SwitchRow(label: String, checked: Boolean, last: Boolean = false, on
             ),
         )
     }
+}
+
+@Composable
+private fun SecondsSliderRow(seconds: Int, range: IntRange, last: Boolean = false, onChange: (Int) -> Unit) {
+    var value by remember(seconds) { mutableFloatStateOf(seconds.toFloat()) }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Duration", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            val shown = value.roundToInt()
+            Text(if (shown == 1) "1 second" else "$shown seconds", style = MaterialTheme.typography.bodyLarge, color = muted)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${range.first}s", style = MaterialTheme.typography.bodySmall, color = muted)
+            val active = MaterialTheme.colorScheme.primary
+            val inactive = MaterialTheme.colorScheme.surfaceContainerHighest
+            Slider(
+                value = value,
+                onValueChange = { value = it },
+                onValueChangeFinished = { onChange(value.roundToInt()) },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+                steps = range.last - range.first - 1,
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                // iOS-style: thin track and a round white knob, no tick marks.
+                thumb = {
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .shadow(3.dp, CircleShape)
+                            .background(Color.White, CircleShape),
+                    )
+                },
+                track = { state ->
+                    val span = state.valueRange.endInclusive - state.valueRange.start
+                    val fraction = ((state.value - state.valueRange.start) / span).coerceIn(0f, 1f)
+                    Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                        val corner = CornerRadius(size.height / 2)
+                        drawRoundRect(inactive, cornerRadius = corner)
+                        drawRoundRect(active, size = Size(size.width * fraction, size.height), cornerRadius = corner)
+                    }
+                },
+            )
+            Text("${range.last}s", style = MaterialTheme.typography.bodySmall, color = muted)
+        }
+    }
+    if (!last) HorizontalDivider(Modifier.padding(start = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
 }
 
 @Composable

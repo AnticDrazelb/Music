@@ -38,6 +38,7 @@ class PlaybackService : MediaSessionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var player: ExoPlayer
+    private lateinit var crossfader: Crossfader
     private var session: MediaSession? = null
     private lateinit var queueStore: QueueStore
 
@@ -56,19 +57,35 @@ class PlaybackService : MediaSessionService() {
             container.mediaCache,
             container.downloads::fileFor,
         )
+        val music = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true,
-            )
+            .setAudioAttributes(music, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player.addListener(listener)
+
+        crossfader = Crossfader(
+            player,
+            createSecondary = {
+                // Only ever plays the outgoing song's last seconds; the main player keeps audio
+                // focus, the wake lock and the media session.
+                ExoPlayer.Builder(this)
+                    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+                    .setAudioAttributes(music, /* handleAudioFocus = */ false)
+                    .build()
+            },
+            durationMs = {
+                val settings = container.settings
+                if (!settings.crossfade.value || container.stopAfterCurrentSong.value) 0L
+                else settings.crossfadeSeconds.value * 1000L
+            },
+        )
+        crossfader.start()
 
         val openApp = PendingIntent.getActivity(
             this,
@@ -111,6 +128,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         saveQueue()
         scope.cancel()
+        crossfader.release()
         session?.run {
             player.release()
             release()
