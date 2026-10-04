@@ -1,0 +1,6 @@
+<resources>
+    <color name="brand">#FA2D48</color>
+    <color name="brand_dark">#D41E5C</color>
+    <color name="window_light">#FFFFFF</color>
+    <color name="window_dark">#000000</color>
+</resources>
