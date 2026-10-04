@@ -372,7 +372,7 @@ fun UserPlaylistScreen(id: Long) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    scope.launch { container.library.deletePlaylist(id) }
+                    container.appScope.launch { container.library.deletePlaylist(id) }
                     navigator.back()
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },

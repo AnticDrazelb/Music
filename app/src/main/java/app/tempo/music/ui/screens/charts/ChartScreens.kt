@@ -206,7 +206,7 @@ fun TopArtistsScreen(country: String) {
             when (val c = chart) {
                 is Load.Loading -> item { LoadingBox() }
                 is Load.Failed -> item { ErrorBox(c.message, onRetry = vm::load) }
-                is Load.Ready -> items(c.data.entries, key = { it.artist.url }) { entry ->
+                is Load.Ready -> items(c.data.entries, key = { "${it.rank}-${it.artist.url}" }) { entry ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "${entry.rank}",

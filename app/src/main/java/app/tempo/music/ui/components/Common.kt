@@ -76,13 +76,18 @@ sealed interface Load<out T> {
 val <T> Load<T>.dataOrNull: T? get() = (this as? Load.Ready<T>)?.data
 
 fun Throwable.userMessage(): String {
+    val chain = generateSequence(this) { it.cause }.take(8).toList()
     val msg = message.orEmpty()
     return when {
-        this is java.net.UnknownHostException || this is java.net.ConnectException -> "You're offline. Check your connection."
-        this is java.net.SocketTimeoutException -> "The connection timed out."
-        "not a bot" in msg || "reCaptcha" in msg -> "YouTube is temporarily limiting requests. Try again soon."
-        msg.isNotBlank() && msg.length < 140 -> msg
-        else -> "Something went wrong."
+        chain.any { it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.NoRouteToHostException } ->
+            "You're offline. Check your connection."
+        chain.any { it is java.net.SocketTimeoutException } -> "The connection timed out. Try again."
+        chain.any { it is javax.net.ssl.SSLException || it is java.security.cert.CertificateException || it.javaClass.simpleName.startsWith("CertPath") } ->
+            "Couldn't connect securely. If you're on public Wi-Fi, sign in to it first."
+        chain.any { "not a bot" in it.message.orEmpty() || it.javaClass.simpleName.contains("ReCaptcha") } ->
+            "YouTube is temporarily limiting requests. Try again soon."
+        msg.isNotBlank() && msg.length < 140 && "Exception" !in msg && "java." !in msg -> msg
+        else -> "Something went wrong. Try again."
     }
 }
 
@@ -118,7 +123,7 @@ fun Artwork(
 private fun fallbackGradient(key: String): List<Color> {
     val dark = MaterialTheme.colorScheme.surfaceContainerHigh
     val light = MaterialTheme.colorScheme.surfaceContainerHighest
-    return if (key.isBlank()) listOf(light, dark) else Gradients.forKey(key).map { it.copy(alpha = 0.85f) }
+    return if (key.isBlank()) listOf(light, dark) else Gradients.forKey(key)
 }
 
 /** 2x2 artwork grid, Apple Music style, for user playlists. */

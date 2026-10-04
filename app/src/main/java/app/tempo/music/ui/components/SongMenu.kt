@@ -157,7 +157,8 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
                 if (target.playlistId != null && target.entryId != null) {
                     SheetAction(Icons.Rounded.RemoveCircleOutline, "Remove from Playlist", tint = MaterialTheme.colorScheme.error, showDivider = false) {
                         act {
-                            scope.launch { container.library.removeFromPlaylist(target.playlistId, target.entryId) }
+                            // App scope: this sheet leaves composition as soon as it closes.
+                            container.appScope.launch { container.library.removeFromPlaylist(target.playlistId, target.entryId) }
                         }
                     }
                 }
@@ -216,7 +217,6 @@ private fun SheetAction(
 private fun AddToPlaylistSheet(songs: List<Song>, state: SongMenuState) {
     val container = LocalAppContainer.current
     val player = LocalPlayer.current
-    val scope = rememberCoroutineScope()
     val playlists by container.library.userPlaylists.collectAsState(initial = emptyList())
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -260,7 +260,7 @@ private fun AddToPlaylistSheet(songs: List<Song>, state: SongMenuState) {
                         .fillMaxWidth()
                         .clickable {
                             state.addToPlaylist = null
-                            scope.launch {
+                            container.appScope.launch {
                                 container.library.addToPlaylist(playlist.id, songs)
                                 player.notify("Added to ${playlist.name}")
                             }
@@ -285,7 +285,6 @@ private fun NewPlaylistDialog(state: SongMenuState) {
     val container = LocalAppContainer.current
     val player = LocalPlayer.current
     val navigator = LocalNavigator.current
-    val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     val initial = state.newPlaylistFor.orEmpty()
@@ -316,7 +315,7 @@ private fun NewPlaylistDialog(state: SongMenuState) {
             TextButton(onClick = {
                 val playlistName = name.ifBlank { "New Playlist" }
                 close()
-                scope.launch {
+                container.appScope.launch {
                     val id = container.library.createPlaylist(playlistName, initial)
                     if (initial.isNotEmpty()) player.notify("Added to $playlistName") else navigator.userPlaylist(id)
                 }

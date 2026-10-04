@@ -70,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -448,6 +449,7 @@ private fun QueueList(state: PlayerUiState, autoplay: Boolean, modifier: Modifie
     val userItems = upNext.filter { !it.isAutoplay }
     val autoplayItems = upNext.filter { it.isAutoplay }
     val rowHeightPx = with(LocalDensity.current) { 60.dp.toPx() }
+    val currentUserItems by rememberUpdatedState(userItems)
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var dragY by remember { mutableFloatStateOf(0f) }
 
@@ -508,9 +510,10 @@ private fun QueueList(state: PlayerUiState, autoplay: Boolean, modifier: Modifie
                             dragY += amount.y
                         },
                         onDragEnd = {
-                            val from = userItems.indexOfFirst { "${it.index}-${it.song.id}" == key }
-                            val to = (from + (dragY / rowHeightPx).roundToInt()).coerceIn(0, userItems.lastIndex)
-                            if (from >= 0 && to != from) player.moveQueueItem(userItems[from].index, userItems[to].index)
+                            val items = currentUserItems
+                            val from = items.indexOfFirst { "${it.index}-${it.song.id}" == key }
+                            val to = (from + (dragY / rowHeightPx).roundToInt()).coerceIn(0, items.lastIndex)
+                            if (from >= 0 && to != from) player.moveQueueItem(items[from].index, items[to].index)
                             draggingKey = null
                             dragY = 0f
                         },

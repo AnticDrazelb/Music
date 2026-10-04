@@ -108,7 +108,7 @@ fun GenreScreen(id: String) {
                 is Load.Failed -> item { ErrorBox(s.message, onRetry = vm::load) }
                 is Load.Ready -> {
                     val visible = if (showAll) s.data else s.data.take(8)
-                    itemsIndexed(visible, key = { _, song -> song.id }) { index, song ->
+                    itemsIndexed(visible, key = { i, song -> "$i-${song.id}" }) { index, song ->
                         SongRow(song, onClick = { player.play(s.data, index) }, onMore = { menu.open(song) })
                     }
                     if (s.data.size > 8 && !showAll) {

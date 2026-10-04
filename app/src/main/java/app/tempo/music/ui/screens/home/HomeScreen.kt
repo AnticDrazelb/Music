@@ -236,7 +236,7 @@ fun HomeScreen() {
                     val data = artists.dataOrNull
                     if (data == null) LoadingBox() else {
                         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(data.entries.take(20), key = { it.artist.url }) { entry ->
+                            itemsIndexed(data.entries.take(20), key = { i, e -> "$i-${e.artist.url}" }) { _, entry ->
                                 ArtistCircle(entry.artist, onClick = { navigator.artist(entry.artist) }, caption = "#${entry.rank}")
                             }
                         }
@@ -261,7 +261,7 @@ fun HomeScreen() {
                 item(key = "shelf-row-${shelf.title}") {
                     if (data == null) LoadingBox() else {
                         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(data, key = { it.url }) { ref ->
+                            itemsIndexed(data, key = { i, ref -> "$i-${ref.url}" }) { _, ref ->
                                 CollectionCard(ref, onClick = { navigator.collection(ref) })
                             }
                         }
@@ -337,7 +337,7 @@ private fun LazyListScope.videoShelf(title: String, chart: Load<Chart>, onSeeAll
             val menu = LocalSongMenu.current
             val songs = data.entries.map { it.song }
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(songs.take(20), key = { _, s -> s.id }) { index, song ->
+                itemsIndexed(songs.take(20), key = { i, s -> "$i-${s.id}" }) { index, song ->
                     VideoCard(song, onClick = { player.play(songs, index) }, onLongClick = { menu.open(song) })
                 }
             }

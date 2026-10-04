@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -179,7 +178,7 @@ fun ArtistScreen(initial: ArtistRef) {
                         }
                         item { SectionHeader("Top Songs") }
                         val visible = if (showAllTop) a.topSongs else a.topSongs.take(5)
-                        itemsIndexed(visible, key = { _, s -> "top-${s.id}" }) { index, song ->
+                        itemsIndexed(visible, key = { i, s -> "top-$i-${s.id}" }) { index, song ->
                             SongRow(song, onClick = { player.play(a.topSongs, index) }, onMore = { menu.open(song) })
                         }
                         if (a.topSongs.size > 5 && !showAllTop) {
@@ -194,7 +193,7 @@ fun ArtistScreen(initial: ArtistRef) {
                         item { SectionHeader("Albums") }
                         item {
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(a.albums, key = { it.url }) { ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
+                                itemsIndexed(a.albums, key = { i, ref -> "album-$i-${ref.url}" }) { _, ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
                             }
                         }
                     }
@@ -202,7 +201,7 @@ fun ArtistScreen(initial: ArtistRef) {
                         item { SectionHeader("Latest Releases") }
                         item {
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(a.latest, key = { _, s -> "latest-${s.id}" }) { index, song ->
+                                itemsIndexed(a.latest, key = { i, s -> "latest-$i-${s.id}" }) { index, song ->
                                     VideoCard(song, onClick = { player.play(a.latest, index) }, onLongClick = { menu.open(song) }, width = 240.dp)
                                 }
                             }
@@ -212,7 +211,7 @@ fun ArtistScreen(initial: ArtistRef) {
                         item { SectionHeader("Playlists") }
                         item {
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(a.playlists, key = { it.url }) { ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
+                                itemsIndexed(a.playlists, key = { i, ref -> "playlist-$i-${ref.url}" }) { _, ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
                             }
                         }
                     }
