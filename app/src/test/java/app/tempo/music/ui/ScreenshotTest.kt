@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToIndex
@@ -232,6 +233,25 @@ open class ScreenshotTest {
         compose.onAllNodes(hasScrollAction()).onFirst().performScrollToIndex(9)
         settleImages(4000)
         snap("16b_artist_rows")
+    }
+
+    @Test
+    fun madeForYou() {
+        val app = ApplicationProvider.getApplicationContext<TempoApp>()
+        runBlocking {
+            val history = app.container.youtube.radio("dQw4w9WgXcQ").take(12)
+            history.forEachIndexed { i, song -> repeat(12 - i) { app.container.library.markPlayed(song) } }
+            history.take(4).forEach { app.container.library.setLiked(it, true) }
+            app.container.mixes.refresh()
+        }
+        waitForText("Made for You", 60_000)
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Made for You"))
+        settleImages(3000)
+        snap("17_made_for_you")
+        clickText("Daily Mix 1")
+        waitForText("Updated today")
+        settleImages(4000)
+        snap("17b_mix")
     }
 
     @Test

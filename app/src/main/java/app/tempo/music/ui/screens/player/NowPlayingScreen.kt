@@ -98,6 +98,7 @@ import app.tempo.music.ui.components.LocalLikedIds
 import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.shareSong
 import app.tempo.music.ui.navigation.LocalAppContainer
+import app.tempo.music.ui.components.SaveAsPlaylistDialog
 import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.navigation.LocalPlayer
 import kotlinx.coroutines.delay
@@ -445,6 +446,11 @@ private fun QueueList(state: PlayerUiState, autoplay: Boolean, modifier: Modifie
     val currentUserItems by rememberUpdatedState(userItems)
     var draggingKey by remember { mutableStateOf<String?>(null) }
     var dragY by remember { mutableFloatStateOf(0f) }
+    var saving by remember { mutableStateOf(false) }
+
+    if (saving) {
+        SaveAsPlaylistDialog(defaultQueueName(player), player.queueSongs(), onDismiss = { saving = false })
+    }
 
     LazyColumn(modifier.fillMaxWidth()) {
         item {
@@ -464,6 +470,14 @@ private fun QueueList(state: PlayerUiState, autoplay: Boolean, modifier: Modifie
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
                 Text("Playing Next", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (upNext.isNotEmpty()) {
+                    Text(
+                        "Save",
+                        color = White70,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.clickable { saving = true }.padding(6.dp),
+                    )
+                }
                 if (userItems.isNotEmpty()) {
                     Text(
                         "Clear",
@@ -595,3 +609,8 @@ private fun QueueRow(entry: QueueEntry, modifier: Modifier = Modifier, dimmed: B
         }
     }
 }
+
+/** "Naive Radio" for a station, otherwise the queue's first song and the date. */
+internal fun defaultQueueName(player: app.tempo.music.playback.PlayerConnection): String =
+    player.stationName ?: "${player.state.value.current?.title ?: "Queue"} Mix · " +
+        java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))

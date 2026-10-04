@@ -84,6 +84,7 @@ class SongMenuState {
     var newPlaylistFor by mutableStateOf<List<Song>?>(null)
     var showNewPlaylist by mutableStateOf(false)
     var showSleepTimer by mutableStateOf(false)
+    var showSaveQueue by mutableStateOf(false)
 
     fun open(song: Song, playlistId: Long? = null, entryId: Long? = null, fromPlayer: Boolean = false) {
         target = MenuTarget(song, playlistId, entryId, fromPlayer)
@@ -122,6 +123,14 @@ fun SongMenuHost(state: SongMenuState, onNavigateAway: () -> Unit) {
     }
     if (state.showNewPlaylist) {
         NewPlaylistDialog(state)
+    }
+    if (state.showSaveQueue) {
+        val player = LocalPlayer.current
+        SaveAsPlaylistDialog(
+            app.tempo.music.ui.screens.player.defaultQueueName(player),
+            player.queueSongs(),
+            onDismiss = { state.showSaveQueue = false },
+        )
     }
 }
 
@@ -170,6 +179,9 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
                         "Sleep Timer · $minutes min left"
                     } ?: "Sleep Timer"
                     SheetAction(Icons.Rounded.Bedtime, label) { act { state.showSleepTimer = true } }
+                    if (player.state.value.upNext.isNotEmpty()) {
+                        SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Save Queue as Playlist…") { act { state.showSaveQueue = true } }
+                    }
                     SheetAction(Icons.Rounded.GraphicEq, "Equalizer", showDivider = false) {
                         act {
                             onNavigateAway()

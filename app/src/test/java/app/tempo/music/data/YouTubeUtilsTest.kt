@@ -75,6 +75,7 @@ class YouTubeUtilsTest {
             Triple("Jay-Z - Empire State of Mind", "JAYZVEVO", "Empire State of Mind" to "Jay-Z"),
             Triple("Taylor Swift - Patient Zero Official Music Video 4K High Definition", "Swiftie", "Patient Zero" to "Taylor Swift"),
             Triple("Adele\u00A0-\u00A0Hello", "Adele", "Hello" to "Adele"),
+            Triple("Don't Let Me Be Misunderstood • TopPop", "Santa Esmeralda", "Don't Let Me Be Misunderstood" to "Santa Esmeralda"),
         )
         cases.forEach { (raw, uploader, expected) ->
             assertEquals(raw, expected, YouTubeUtils.splitTitle(raw, uploader))

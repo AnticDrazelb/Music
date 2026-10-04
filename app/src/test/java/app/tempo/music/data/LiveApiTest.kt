@@ -72,6 +72,18 @@ class LiveApiTest {
     }
 
     @Test
+    fun mixesFromRealRadio() = runBlocking {
+        val history = youtube.radio("dQw4w9WgXcQ").take(12)
+        val day = java.time.LocalDate.now()
+        val plan = app.tempo.music.data.mixes.MixBuilder.plan(history, emptyList(), day)
+        val stations = plan.seeds.associate { it.id to youtube.radio(it.id) }
+        val mixes = app.tempo.music.data.mixes.MixBuilder.build(plan, history, emptyList(), stations, day)
+        mixes.forEach { m -> println("  ${m.title} — ${m.subtitle}: ${m.songs.size} songs, e.g. ${m.songs.take(3).map { it.title + " / " + it.artist }}") }
+        assertTrue(mixes.count { it.id.startsWith("daily") } >= 2)
+        assertTrue(mixes.filter { it.id.startsWith("daily") }.all { it.songs.size >= 15 })
+    }
+
+    @Test
     fun artistChart() = runBlocking {
         val artists = charts.artists("us")
         println("artists=${artists.entries.size} #1 ${artists.entries.first().artist}")

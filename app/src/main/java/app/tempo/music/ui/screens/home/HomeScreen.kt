@@ -1,5 +1,6 @@
 package app.tempo.music.ui.screens.home
 
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +41,7 @@ import app.tempo.music.data.model.Chart
 import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.data.model.Song
+import app.tempo.music.data.mixes.Mix
 import app.tempo.music.ui.components.ArtistCircle
 import app.tempo.music.ui.components.ChartSongRow
 import app.tempo.music.ui.components.CollectionCard
@@ -87,6 +89,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val liked: StateFlow<List<Song>> = c.library.likedSongs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val mixes: StateFlow<List<Mix>> = c.mixes.mixes
 
     init {
         load()
@@ -112,6 +115,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
 
     private fun load() {
+        // Today's mixes; a no-op once they've been made today.
+        viewModelScope.launch { runCatching { c.mixes.refresh() } }
         val country = _state.value.country
         val jobs = listOf(
             loadInto({ c.charts.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL) }) { copy(topGlobal = it) },
@@ -156,6 +161,7 @@ fun HomeScreen() {
     val state by vm.state.collectAsState()
     val recent by vm.recent.collectAsState()
     val liked by vm.liked.collectAsState()
+    val mixes by vm.mixes.collectAsState()
     val navigator = LocalNavigator.current
     val player = LocalPlayer.current
     val menu = LocalSongMenu.current
@@ -192,7 +198,7 @@ fun HomeScreen() {
                             }
                         }
                     }
-                    if (liked.isNotEmpty()) {
+                    if (liked.isNotEmpty() && mixes.none { it.id == "favourites" }) {
                         item {
                             PickCard("Favorites Mix", "${liked.size} songs you love", "Made for you", Gradients.all[5]) {
                                 player.play(liked, shuffle = true)
@@ -202,6 +208,28 @@ fun HomeScreen() {
                     item {
                         PickCard("Top 40", "Global", "Updated weekly", Gradients.all[3]) {
                             navigator.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL, limit = 40)
+                        }
+                    }
+                }
+            }
+
+            // ---- Made for you: daily mixes from your listening
+            if (mixes.isNotEmpty()) {
+                item { SectionHeader("Made for You") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(mixes, key = { it.id }) { mix ->
+                            Column(Modifier.width(170.dp).clickable { navigator.mix(mix.id) }) {
+                                MixArt(mix, Modifier.size(170.dp).clip(RoundedCornerShape(12.dp)), titleSize = 26)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    mix.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 }

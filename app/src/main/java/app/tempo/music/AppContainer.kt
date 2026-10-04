@@ -15,6 +15,7 @@ import app.tempo.music.data.db.MusicDatabase
 import app.tempo.music.data.download.AudioDownloader
 import app.tempo.music.data.download.DownloadRepository
 import app.tempo.music.data.lyrics.LyricsRepository
+import app.tempo.music.data.mixes.MixRepository
 import app.tempo.music.data.youtube.StreamResolver
 import app.tempo.music.data.youtube.YouTubeRepository
 import app.tempo.music.playback.PlayerConnection
@@ -65,6 +66,8 @@ class AppContainer(context: Context) {
         AudioDownloader(httpClient, streamResolver),
         appScope,
     )
+
+    val mixes = MixRepository(library, youtube::radio, File(appContext.filesDir, "mixes"))
 
     /** Audio cache shared by the playback service (SimpleCache must be a singleton per folder). */
     val mediaCache: SimpleCache by lazy {

@@ -22,6 +22,7 @@ import kotlinx.serialization.Serializable
 @Serializable object LibraryRoute
 @Serializable object SettingsRoute
 @Serializable object EqualizerRoute
+@Serializable data class MixRoute(val id: String)
 @Serializable data class BrowseItemsRoute(val browseId: String, val params: String?, val title: String)
 
 @Serializable data class ChartRoute(val kind: String, val country: String, val limit: Int = 100)
@@ -91,6 +92,7 @@ class Navigator(val nav: NavHostController) {
     fun library(section: LibrarySection) = nav.navigate(LibrarySectionRoute(section.name))
     fun settings() = nav.navigate(SettingsRoute)
     fun equalizer() = nav.navigate(EqualizerRoute)
+    fun mix(id: String) = nav.navigate(MixRoute(id))
     fun browse(ref: BrowseRef) = nav.navigate(BrowseItemsRoute(ref.browseId, ref.params, ref.title))
 }
 

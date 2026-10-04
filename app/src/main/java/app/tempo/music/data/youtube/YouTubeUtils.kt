@@ -106,7 +106,8 @@ object YouTubeUtils {
     /** ...but only removed when one of these is among them, so "Thank You for the Music" stays. */
     private val strongTrailing = setOf("official", "oficial", "lyrics", "lyric", "hd", "hq", "4k", "8k", "uhd", "mv", "visualizer", "visualiser")
 
-    private val trailingPipe = Regex("""\s*[|｜].*$""")
+    /** "Song | Official Audio", "Song • TopPop": whatever follows a pipe or bullet describes the upload. */
+    private val trailingPipe = Regex("""\s*(?:[|｜]|\s•\s).*$""")
     /** A dash with a space on at least one side: "A - B", "A -B", "A- B" (but not "Jay-Z"). */
     private val dashSplit = Regex("""\s+[-–—~]\s*|\s*[-–—~]\s+""")
     /** An unclosed bracket at the end: "Song (Official Lyric Video". */

@@ -164,8 +164,16 @@ class PlayerConnection(
 
     // ------------------------------------------------------------------ playback
 
+    /** Name of the station now playing ("Naive Radio"), used when saving it as a playlist. */
+    var stationName: String? = null
+        private set
+
+    /** The current song and everything after it, autoplay included: what "Save as Playlist" keeps. */
+    fun queueSongs(): List<Song> = _state.value.let { s -> listOfNotNull(s.current) + s.upNext.map { it.song } }
+
     fun play(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false) {
         if (songs.isEmpty()) return
+        stationName = null
         withController { c ->
             val list = if (shuffle) songs.shuffled() else songs
             val start = if (shuffle) 0 else startIndex.coerceIn(0, songs.lastIndex)
@@ -221,6 +229,7 @@ class PlayerConnection(
     /** Plays [song] followed by a station of similar songs. */
     fun startRadio(song: Song) {
         play(listOf(song))
+        stationName = "${song.title} Radio"
         _messages.tryEmit("Starting station…")
         scope.launch {
             val songs = runCatching { youtube.radio(song.id) }.getOrElse {
