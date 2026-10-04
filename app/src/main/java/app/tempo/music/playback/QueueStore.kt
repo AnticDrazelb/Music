@@ -2,6 +2,7 @@ package app.tempo.music.playback
 
 import android.content.Context
 import app.tempo.music.data.model.Song
+import app.tempo.music.data.youtube.YouTubeUtils
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -28,5 +29,13 @@ class QueueStore(context: Context) {
 
     fun load(): SavedQueue? = runCatching {
         if (!file.exists()) null else json.decodeFromString(SavedQueue.serializer(), file.readText())
-    }.getOrNull()?.takeIf { it.songs.isNotEmpty() }
+    }.getOrNull()?.takeIf { it.songs.isNotEmpty() }?.let { queue ->
+        // A queue saved by an older version may still have uncleaned video titles.
+        queue.copy(
+            songs = queue.songs.map { song ->
+                val (title, artist) = YouTubeUtils.recleanStored(song.title, song.artist)
+                song.copy(title = title, artist = artist)
+            },
+        )
+    }
 }

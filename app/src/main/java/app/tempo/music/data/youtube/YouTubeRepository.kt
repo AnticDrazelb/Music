@@ -47,6 +47,7 @@ class YouTubeRepository(private val client: OkHttpClient) {
     }
 
     private val service: StreamingService get() = ServiceList.YouTube
+    private val music = YouTubeMusicApi(client)
 
     fun init(countryCode: String) {
         NewPipe.init(
@@ -54,11 +55,13 @@ class YouTubeRepository(private val client: OkHttpClient) {
             Localization.fromLocale(Locale.getDefault()),
             ContentCountry(countryCode.uppercase()),
         )
+        music.country = countryCode.uppercase()
         // Mixes ("radio") need the consent cookie in some regions.
         YoutubeParsingHelper.setConsentAccepted(true)
     }
 
     fun setCountry(countryCode: String) {
+        music.country = countryCode.uppercase()
         NewPipe.setupLocalization(
             NewPipe.getPreferredLocalization(),
             ContentCountry(countryCode.uppercase()),
@@ -85,7 +88,10 @@ class YouTubeRepository(private val client: OkHttpClient) {
                 // The YouTube Music catalogue isn't offered in every region; fall back to
                 // regular YouTube results so search still finds something playable.
                 val (videos, videosNext) = rawSearch(query, YoutubeSearchQueryHandlerFactory.VIDEOS, null)
-                val songs = videos.mapNotNull { it.toSong(isMusic = false) }
+                val streams = videos.filterIsInstance<StreamInfoItem>()
+                val songs = streams.filter { YouTubeUtils.looksLikeMusic(it.name, it.uploaderName) }
+                    .ifEmpty { streams } // keep something rather than nothing
+                    .mapNotNull { it.toSong(isMusic = false) }
                     .filter { it.durationSec <= MAX_SONG_SECONDS } // skip hour-long compilations
                     .distinctBy { it.id }
                 return@withContext Page(songs, videosNext?.takeIf { NewPipePage.isValid(it) })
@@ -143,19 +149,26 @@ class YouTubeRepository(private val client: OkHttpClient) {
             .distinctBy { it.id }
     }
 
-    /** A YouTube Music style radio station seeded from [videoId]; falls back to similar songs. */
+    /**
+     * A radio station seeded from [videoId]: YouTube Music's own radio first (it also works for
+     * the art-track ids the charts use), then YouTube's mix, then "watch next" suggestions.
+     */
     suspend fun radio(videoId: String): List<Song> = withContext(Dispatchers.IO) {
-        val fromMix = runCatching {
-            PlaylistInfo.getInfo(service, YouTubeUtils.radioUrl(videoId)).relatedItems
-                .mapNotNull { it.toSong(isMusic = false) }
-        }.getOrDefault(emptyList())
-        val songs = fromMix.ifEmpty { runCatching { similar(videoId) }.getOrDefault(emptyList()) }
+        val songs = runCatching { music.radio(videoId) }.getOrDefault(emptyList()).filter { it.id != videoId }
+            .ifEmpty {
+                runCatching {
+                    PlaylistInfo.getInfo(service, YouTubeUtils.radioUrl(videoId)).relatedItems
+                        .mapNotNull { it.toSong(isMusic = false) }
+                }.getOrDefault(emptyList())
+            }
+            .ifEmpty { runCatching { similar(videoId) }.getOrDefault(emptyList()) }
         songs.filter { it.id != videoId }.distinctBy { it.id }
     }
 
     // ---------------------------------------------------------------- collections
 
     suspend fun collection(url: String): CollectionDetail = withContext(Dispatchers.IO) {
+        musicCollection(url)?.let { return@withContext it }
         val info = PlaylistInfo.getInfo(service, url)
         val isMusic = isMusicCollection(url)
         val type = collectionType(url)
@@ -175,7 +188,36 @@ class YouTubeRepository(private val client: OkHttpClient) {
         )
     }
 
+    /**
+     * Playlists read through YouTube Music, which lists each track under its catalogue title and
+     * artists instead of the upload's "Artist - Song (Official 4K Video)". Albums stay on YouTube.
+     */
+    private fun musicCollection(url: String): CollectionDetail? {
+        val id = YouTubeUtils.playlistId(url) ?: return null
+        val isAlbum = id.startsWith("OLAK5uy_") || id.startsWith("MPREb_")
+        val isMix = id.startsWith("RD") && !id.startsWith("RDCLAK")
+        if (isAlbum || isMix) return null
+        val page = runCatching { music.playlist(id) }.getOrNull()?.takeIf { it.songs.isNotEmpty() } ?: return null
+        return CollectionDetail(
+            ref = CollectionRef(
+                url = url,
+                title = page.title.orEmpty(),
+                subtitle = page.subtitle,
+                thumbnailUrl = page.thumbnailUrl ?: page.songs.first().thumbnailUrl,
+                type = collectionType(url),
+            ),
+            songs = page.songs,
+            nextPage = page.continuation?.let(::MusicContinuation),
+        )
+    }
+
+    private data class MusicContinuation(val token: String)
+
     suspend fun moreCollectionSongs(url: String, page: Any): Page<Song> = withContext(Dispatchers.IO) {
+        if (page is MusicContinuation) {
+            val more = music.playlistContinuation(page.token)
+            return@withContext Page(more.songs, more.continuation?.let(::MusicContinuation))
+        }
         val more = PlaylistInfo.getMoreItems(service, url, page as NewPipePage)
         Page(
             more.items.mapNotNull { it.toSong(isMusicCollection(url)) },
@@ -285,12 +327,7 @@ class YouTubeRepository(private val client: OkHttpClient) {
         }
         if (item.isShortFormContent) return null
         val id = YouTubeUtils.videoId(item.url) ?: return null
-        val uploader = item.uploaderName
-        val (title, artist) = if (isMusic || uploader?.endsWith(" - Topic") == true) {
-            YouTubeUtils.stripNoise(item.name) to YouTubeUtils.cleanArtist(uploader)
-        } else {
-            YouTubeUtils.splitTitle(item.name, uploader)
-        }
+        val (title, artist) = YouTubeUtils.splitTitle(item.name, item.uploaderName, artistIsReliable = isMusic)
         return Song(
             id = id,
             title = title,

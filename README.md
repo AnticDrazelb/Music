@@ -54,7 +54,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.4.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.5.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
@@ -80,7 +80,9 @@ sign an APK that Android will accept as an update to Tempo.
 | --- | --- |
 | UI | Kotlin, Jetpack Compose, Material 3 restyled to look like iOS/Apple Music |
 | Playback | Media3 ExoPlayer in a `MediaSessionService`. A resolving data source turns `tempo://youtube/<id>` into a signed audio URL just before playback. |
-| YouTube | [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) for search, stream URLs, playlists, channels and radio mixes |
+| YouTube | [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) for search, stream URLs, albums and channels. YouTube Music's own web API (`data/youtube/YouTubeMusicApi.kt`) for playlists and radio, because it lists music videos under their catalogue title and artists. |
+| Titles | Uploads that only exist as videos are cleaned in `YouTubeUtils.splitTitle`: "Haddaway - What Is Love (Official 4K Video)" by the channel "DECADR" becomes "What Is Love" by Haddaway. Songs saved by older versions are cleaned once on upgrade. |
+| Artwork | `ArtworkInterceptor` asks for each image at the size it's drawn: album art up to 1200 px, video stills as the 1280×720 version (falling back when a video has none). |
 | Charts | `charts.youtube.com` browse API (`data/charts/ChartsRepository.kt`) |
 | Storage | Room for playlists, favourites, history and the download queue. DataStore for settings. |
 | Crossfade | `playback/Crossfader.kt`. ExoPlayer plays one song at a time, so a second, hidden player loads the last seconds of the current song in advance. When the main player reaches the fade point (a position-triggered `PlayerMessage`), it moves on to the next song while the hidden player finishes the old one, and their volumes follow equal-power (sin/cos) curves. |

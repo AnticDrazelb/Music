@@ -60,6 +60,26 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
+    fun cleansUpTitlesSavedByOlderVersions() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, MusicDatabase::class.java).allowMainThreadQueries().build()
+        val library = LibraryRepository(db)
+        library.setLiked(Song("a", "Taylor Swift - I Knew It, I Knew You (from Toy Story 5)", "Taylor Swift"), true)
+        library.setLiked(Song("b", "Take On Me [Remastered in 4K]", "a-ha"), true)
+        library.setLiked(Song("c", "Blinding Lights", "The Weeknd"), true)
+
+        assertEquals(2, library.recleanSongs())
+        assertEquals(
+            setOf("I Knew It, I Knew You (from Toy Story 5)" to "Taylor Swift", "Take On Me" to "a-ha", "Blinding Lights" to "The Weeknd"),
+            library.likedSongs.first().map { it.title to it.artist }.toSet(),
+        )
+        // Likes survive and a second run has nothing left to do.
+        assertEquals(3, library.likedSongs.first().size)
+        assertEquals(0, library.recleanSongs())
+        db.close()
+    }
+
     private fun createV1Database(file: File) {
         val schema = Json.parseToJsonElement(
             File("schemas/app.tempo.music.data.db.MusicDatabase/1.json").readText(),

@@ -22,6 +22,7 @@ import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.Song
 import app.tempo.music.playback.PlaybackService
 import app.tempo.music.playback.eq.EqSettings
+import app.tempo.music.ui.components.ArtworkInterceptor
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.annotation.DelicateCoilApi
@@ -88,7 +89,10 @@ open class ScreenshotTest {
             assumeTrue(System.getProperty("screenshots") == "true")
             SingletonImageLoader.setUnsafe { context ->
                 ImageLoader.Builder(context)
-                    .components { add(OkHttpNetworkFetcherFactory()) }
+                    .components {
+                        add(ArtworkInterceptor())
+                        add(OkHttpNetworkFetcherFactory())
+                    }
                     .allowHardware(false)
                     .imageDecoderEnabled(false) // Robolectric has no ImageDecoder
                     .build()

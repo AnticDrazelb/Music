@@ -35,6 +35,7 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
         val eqEnabled = booleanPreferencesKey("eq_enabled")
         val eqPreset = stringPreferencesKey("eq_preset")
         val eqCustomGains = stringPreferencesKey("eq_custom_gains")
+        val cleanupVersion = intPreferencesKey("metadata_cleanup_version")
     }
 
     private val prefs: Flow<Preferences> = context.dataStore.data
@@ -89,6 +90,10 @@ class SettingsRepository(private val context: Context, scope: CoroutineScope) {
     suspend fun setCrossfade(value: Boolean) = context.dataStore.edit { it[Keys.crossfade] = value }
     suspend fun setCrossfadeSeconds(value: Int) =
         context.dataStore.edit { it[Keys.crossfadeSeconds] = value.coerceIn(CROSSFADE_RANGE) }
+
+    /** Version of the one-off library clean-up already applied. */
+    suspend fun cleanupVersion(): Int = prefs.first()[Keys.cleanupVersion] ?: 0
+    suspend fun setCleanupVersion(value: Int) = context.dataStore.edit { it[Keys.cleanupVersion] = value }
 
     suspend fun setEqualizer(value: EqSettings) = context.dataStore.edit {
         it[Keys.eqEnabled] = value.enabled

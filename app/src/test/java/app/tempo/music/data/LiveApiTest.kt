@@ -51,6 +51,24 @@ class LiveApiTest {
         }
     }
 
+    /** Titles and artists as an Apple Music listener expects them, not as YouTube uploads name them. */
+    @Test
+    fun playlistsAndRadioHaveCleanTitles() = runBlocking {
+        val noise = Regex("""(?i)\bofficial\b|\b4k\b|\bhd\b|\blyrics?\b|visuali[sz]er""")
+        fun check(label: String, songs: List<app.tempo.music.data.model.Song>) {
+            songs.take(8).forEach { println("  $label: ${it.title} — ${it.artist}") }
+            assertTrue("$label: ${songs.size} songs", songs.size >= 10)
+            assertTrue(label, songs.none { it.artist == "Unknown Artist" })
+            val noisy = songs.filter { noise.containsMatchIn(it.title) || " - " in it.title }
+            assertTrue("$label: $noisy", noisy.size <= songs.size / 10)
+        }
+        // A YouTube Music editorial playlist made of music videos.
+        check("The Hit List", youtube.collection("https://music.youtube.com/playlist?list=RDCLAK5uy_kmPRjHDECIcuVwnKsx2Ng7fyNgFKWNJFs").songs)
+        // A user playlist and a radio station, both full of "Artist - Song (Official Video)" uploads.
+        check("user playlist", youtube.collection("https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj").songs)
+        check("radio", youtube.radio("dQw4w9WgXcQ"))
+    }
+
     @Test
     fun artistChart() = runBlocking {
         val artists = charts.artists("us")

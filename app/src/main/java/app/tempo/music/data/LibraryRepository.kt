@@ -12,6 +12,7 @@ import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.data.model.CollectionType
 import app.tempo.music.data.model.MusicItem
 import app.tempo.music.data.model.Song
+import app.tempo.music.data.youtube.YouTubeUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -65,6 +66,19 @@ class LibraryRepository(private val db: MusicDatabase) {
     suspend fun markPlayed(song: Song) {
         ensureSong(song)
         songs.markPlayed(song.id, System.currentTimeMillis())
+    }
+
+    /** Applies the current title/artist clean-up to songs saved by older versions. */
+    suspend fun recleanSongs(): Int {
+        var changed = 0
+        songs.all().forEach { song ->
+            val (title, artist) = YouTubeUtils.recleanStored(song.title, song.artist)
+            if (title != song.title || artist != song.artist) {
+                songs.rename(song.id, title, artist)
+                changed++
+            }
+        }
+        return changed
     }
 
     suspend fun clearHistory() = songs.clearHistory()

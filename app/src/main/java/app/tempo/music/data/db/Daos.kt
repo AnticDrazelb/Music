@@ -33,6 +33,12 @@ interface SongDao {
     @Query("UPDATE songs SET likedAt = :likedAt WHERE id = :id")
     suspend fun setLikedAt(id: String, likedAt: Long?)
 
+    @Query("SELECT * FROM songs")
+    suspend fun all(): List<SongEntity>
+
+    @Query("UPDATE songs SET title = :title, artist = :artist WHERE id = :id")
+    suspend fun rename(id: String, title: String, artist: String)
+
     @Query("UPDATE songs SET lastPlayedAt = :time, playCount = playCount + 1 WHERE id = :id")
     suspend fun markPlayed(id: String, time: Long)
 

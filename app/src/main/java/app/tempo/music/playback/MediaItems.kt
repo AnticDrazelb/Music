@@ -5,6 +5,7 @@ import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import app.tempo.music.data.model.Song
+import app.tempo.music.data.youtube.ArtworkUrls
 
 /** Conversions between our [Song] model and Media3 [MediaItem]s. */
 object MediaItems {
@@ -27,7 +28,8 @@ object MediaItems {
             .setTitle(song.title)
             .setArtist(song.artist)
             .setAlbumTitle(song.album)
-            .setArtworkUri(song.thumbnailUrl?.toUri())
+            // Lock screen and notification artwork, at a size that stays sharp there.
+            .setArtworkUri(song.thumbnailUrl?.let { ArtworkUrls.candidates(it, 600).first().toUri() })
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)

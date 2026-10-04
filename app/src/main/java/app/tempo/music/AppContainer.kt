@@ -85,8 +85,19 @@ class AppContainer(context: Context) {
     init {
         youtube.init(settings.country.value)
         downloads.start()
+        appScope.launch(Dispatchers.IO) {
+            // Songs saved before 1.5.0 can carry "(Official 4K Video)"-style titles.
+            if (settings.cleanupVersion() < METADATA_CLEANUP_VERSION) {
+                runCatching { library.recleanSongs() }
+                settings.setCleanupVersion(METADATA_CLEANUP_VERSION)
+            }
+        }
         appScope.launch {
             settings.country.drop(1).collect { youtube.setCountry(it) }
         }
+    }
+
+    private companion object {
+        const val METADATA_CLEANUP_VERSION = 1
     }
 }

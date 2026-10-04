@@ -1,6 +1,7 @@
 package app.tempo.music
 
 import android.app.Application
+import app.tempo.music.ui.components.ArtworkInterceptor
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -22,7 +23,10 @@ class TempoApp : Application(), SingletonImageLoader.Factory {
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
-            .components { add(OkHttpNetworkFetcherFactory(callFactory = { container.httpClient })) }
+            .components {
+                add(ArtworkInterceptor())
+                add(OkHttpNetworkFetcherFactory(callFactory = { container.httpClient }))
+            }
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.2).build() }
             .diskCache {
                 DiskCache.Builder()
