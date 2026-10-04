@@ -75,6 +75,7 @@ import app.tempo.music.ui.components.LocalSongMenu
 import app.tempo.music.ui.components.NowPlaying
 import app.tempo.music.ui.components.SongMenuHost
 import app.tempo.music.ui.components.SongMenuState
+import app.tempo.music.ui.components.frostedBarStyle
 import app.tempo.music.ui.navigation.ArtistRoute
 import app.tempo.music.ui.navigation.BrowseRoute
 import app.tempo.music.ui.navigation.ChartRoute
@@ -114,6 +115,10 @@ import app.tempo.music.ui.screens.player.NowPlayingScreen
 import app.tempo.music.ui.screens.search.SearchScreen
 import app.tempo.music.ui.screens.settings.SettingsScreen
 import app.tempo.music.ui.screens.settings.EqualizerScreen
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -150,6 +155,7 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
         }
     }
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val haze = rememberHazeState()
 
     LaunchedEffect(Unit) { player.connect() }
     LaunchedEffect(Unit) {
@@ -222,7 +228,7 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
             NavHost(
                 navController = navController,
                 startDestination = HomeRoute,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().hazeSource(haze),
                 enterTransition = {
                     if (targetState.destination.isTabRoot()) fadeIn(tween(180))
                     else slideInHorizontally(tween(300)) { it } + fadeIn(tween(300))
@@ -285,10 +291,14 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
                             .padding(horizontal = 18.dp, vertical = 10.dp),
                     )
                 }
-                if (playerState.current != null) {
-                    MiniPlayer(onExpand = { expanded = true })
+                // The mini player and tabs share one frosted panel, so whatever scrolls behind
+                // them is blurred rather than showing through the gaps.
+                FrostedPanel(haze) {
+                    if (playerState.current != null) {
+                        MiniPlayer(onExpand = { expanded = true })
+                    }
+                    BottomTabs(selected = tab, onSelect = ::selectTab)
                 }
-                BottomTabs(selected = tab, onSelect = ::selectTab)
             }
 
             AnimatedVisibility(
@@ -305,9 +315,16 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
 }
 
 @Composable
-private fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background.copy(alpha = 0.97f))) {
+private fun FrostedPanel(haze: HazeState, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().hazeEffect(haze, frostedBarStyle())) {
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+        content()
+    }
+}
+
+@Composable
+private fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().navigationBarsPadding().height(54.dp)) {
             TabItem(Icons.Rounded.Home, "Home", selected == Tab.HOME, Modifier.weight(1f)) { onSelect(Tab.HOME) }
             TabItem(Icons.Rounded.GridView, "Browse", selected == Tab.BROWSE, Modifier.weight(1f)) { onSelect(Tab.BROWSE) }

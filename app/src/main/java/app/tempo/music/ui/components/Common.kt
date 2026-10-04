@@ -65,6 +65,9 @@ import androidx.compose.ui.unit.dp
 import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.theme.Gradients
 import coil3.compose.AsyncImage
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 
 /** Loading state for screen sections. */
 sealed interface Load<out T> {
@@ -314,12 +317,16 @@ fun DetailScaffold(
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 120 }
     }
     val showBar = scrolled || alwaysShowTitle
+    val haze = rememberHazeState()
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        content(PaddingValues(bottom = 160.dp))
+        Box(Modifier.fillMaxSize().hazeSource(haze)) {
+            content(PaddingValues(bottom = 160.dp))
+        }
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(if (showBar) MaterialTheme.colorScheme.background.copy(alpha = 0.96f) else Color.Transparent),
+                // Frosted once content scrolls under it, like the tab bar.
+                .then(if (showBar) Modifier.hazeEffect(haze, frostedBarStyle()) else Modifier),
         ) {
             Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
             Row(

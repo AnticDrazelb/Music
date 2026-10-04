@@ -24,8 +24,8 @@ android {
         applicationId = "app.tempo.music"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.6.0"
+        versionCode = 8
+        versionName = "1.6.1"
     }
 
     signingConfigs {
@@ -138,6 +138,7 @@ dependencies {
 
     implementation(libs.datastore.preferences)
     implementation(libs.palette)
+    implementation(libs.haze)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)

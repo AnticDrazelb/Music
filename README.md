@@ -66,11 +66,13 @@ An Apple Music–style music player for Android that streams from YouTube.
   Android Auto settings, tap Version repeatedly to turn on developer mode, then ⋮ → Developer
   settings → Unknown sources.
 - **Share a YouTube or YouTube Music link** to Tempo to play it.
-- Light and dark mode follow the system setting. The app is locked to portrait.
+- Light and dark mode follow the system setting. The app is locked to portrait. The tab bar,
+  mini player and page titles sit on frosted glass, so lists scrolling behind them blur
+  instead of showing through (Android 12 and newer; older phones get a solid bar).
 
 ## Install
 
-1. Download `Tempo-1.6.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.6.1.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.

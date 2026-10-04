@@ -255,6 +255,28 @@ open class ScreenshotTest {
     }
 
     @Test
+    fun frostedBar() {
+        val app = ApplicationProvider.getApplicationContext<TempoApp>()
+        val chart = runBlocking { app.container.charts.chart(ChartKind.TOP_SONGS, ChartsRepository.GLOBAL) }
+        compose.runOnUiThread {
+            app.container.playerConnection.play(chart.entries.map { it.song }.take(5))
+            app.container.playerConnection.togglePlayPause()
+        }
+        repeat(12) {
+            Thread.sleep(250)
+            compose.waitForIdle()
+        }
+        compose.waitUntil(15_000) { app.container.playerConnection.state.value.current != null }
+        clickText("Browse")
+        clickText("Top 100: Global")
+        waitForText("Week ending")
+        // Rows scrolled so that titles sit behind the mini player and the tabs.
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToIndex(6)
+        settleImages()
+        snap("18_frosted_bar")
+    }
+
+    @Test
     fun searchCancelGoesHome() {
         clickText("Search")
         compose.onNode(hasSetTextAction()).performClick()
