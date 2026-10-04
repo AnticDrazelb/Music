@@ -21,6 +21,7 @@ import app.tempo.music.data.charts.ChartsRepository
 import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.Song
 import app.tempo.music.playback.PlaybackService
+import app.tempo.music.playback.eq.EqSettings
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.annotation.DelicateCoilApi
@@ -29,6 +30,7 @@ import coil3.imageDecoderEnabled
 import coil3.request.allowHardware
 import com.github.takahirom.roborazzi.captureRoboImage
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -207,6 +209,31 @@ open class ScreenshotTest {
         waitForText("Crossfade")
         settleImages(1000)
         snap("14_settings")
+    }
+
+    @Test
+    fun searchCancelGoesHome() {
+        clickText("Search")
+        compose.onNode(hasSetTextAction()).performClick()
+        waitForText("Cancel")
+        clickText("Cancel")
+        waitForText("Top Picks")
+        assertTrue(compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun equalizer() {
+        val app = ApplicationProvider.getApplicationContext<TempoApp>()
+        app.container.equalizer.save(
+            EqSettings(preset = null, customGains = listOf(5f, 4f, 2.5f, 0.5f, -1.5f, -1f, 1f, 2.5f, 3.5f, 4f)),
+        )
+        clickText("Library")
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Settings")).onFirst().performClick()
+        waitForText("Crossfade")
+        clickText("Equalizer")
+        waitForText("Reset")
+        settleImages(1000)
+        snap("15_equalizer")
     }
 
     @Test

@@ -78,6 +78,7 @@ import app.tempo.music.ui.components.formatDuration
 import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalNavigator
 import app.tempo.music.ui.navigation.LocalPlayer
+import app.tempo.music.ui.navigation.Tab
 import app.tempo.music.ui.navigation.appViewModel
 import app.tempo.music.ui.screens.browse.Genres
 import app.tempo.music.ui.screens.browse.genreGrid
@@ -270,6 +271,7 @@ fun SearchScreen() {
                 TextButton(onClick = {
                     vm.clear()
                     focusManager.clearFocus()
+                    navigator.showTab(Tab.HOME)
                 }) { Text("Cancel", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge) }
             } else {
                 Spacer(Modifier.width(8.dp))

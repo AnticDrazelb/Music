@@ -79,6 +79,7 @@ fun SettingsScreen() {
     val dataSaver by container.settings.dataSaverOnCellular.collectAsState()
     val crossfade by container.settings.crossfade.collectAsState()
     val crossfadeSeconds by container.settings.crossfadeSeconds.collectAsState()
+    val equalizer by container.equalizer.saved.collectAsState()
     val country by container.settings.country.collectAsState()
     var pickCountry by remember { mutableStateOf(false) }
     var confirmRemoveDownloads by remember { mutableStateOf(false) }
@@ -102,8 +103,9 @@ fun SettingsScreen() {
             item {
                 Group(
                     "Playback",
-                    "Crossfade blends the end of each song into the next. Autoplay keeps the music going " +
-                        "with similar songs when your queue ends.",
+                    "Crossfade blends the end of each song into the next. The equalizer shapes the sound " +
+                        "of everything you play. Autoplay keeps the music going with similar songs when " +
+                        "your queue ends.",
                 ) {
                     SwitchRow("Crossfade", crossfade) { v -> scope.launch { container.settings.setCrossfade(v) } }
                     if (crossfade) {
@@ -111,6 +113,7 @@ fun SettingsScreen() {
                             scope.launch { container.settings.setCrossfadeSeconds(v) }
                         }
                     }
+                    ValueRow("Equalizer", equalizer.label) { navigator.equalizer() }
                     SwitchRow("Autoplay", autoplay) { v -> scope.launch { container.settings.setAutoplay(v) } }
                     SwitchRow("High Quality Audio", highQuality) { v -> scope.launch { container.settings.setHighQuality(v) } }
                     SwitchRow("Data Saver on Mobile Data", dataSaver, last = true) { v ->
@@ -199,7 +202,7 @@ fun SettingsScreen() {
 }
 
 @Composable
-private fun Group(title: String, footer: String? = null, content: @Composable () -> Unit) {
+internal fun Group(title: String, footer: String? = null, content: @Composable () -> Unit) {
     Column(Modifier.padding(top = 18.dp)) {
         Text(
             title.uppercase(),
@@ -226,7 +229,7 @@ private fun Group(title: String, footer: String? = null, content: @Composable ()
 }
 
 @Composable
-private fun RowBase(last: Boolean, onClick: (() -> Unit)?, content: @Composable RowScope.() -> Unit) {
+internal fun RowBase(last: Boolean, onClick: (() -> Unit)?, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -239,7 +242,7 @@ private fun RowBase(last: Boolean, onClick: (() -> Unit)?, content: @Composable 
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, last: Boolean = false, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: String, checked: Boolean, last: Boolean = false, onChange: (Boolean) -> Unit) {
     RowBase(last, onClick = { onChange(!checked) }) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Switch(
@@ -304,7 +307,7 @@ private fun SecondsSliderRow(seconds: Int, range: IntRange, last: Boolean = fals
 }
 
 @Composable
-private fun ValueRow(label: String, value: String, last: Boolean = false, onClick: (() -> Unit)?) {
+internal fun ValueRow(label: String, value: String, last: Boolean = false, onClick: (() -> Unit)?) {
     RowBase(last, onClick) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

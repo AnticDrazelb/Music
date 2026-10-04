@@ -18,6 +18,7 @@ import app.tempo.music.data.lyrics.LyricsRepository
 import app.tempo.music.data.youtube.StreamResolver
 import app.tempo.music.data.youtube.YouTubeRepository
 import app.tempo.music.playback.PlayerConnection
+import app.tempo.music.playback.eq.EqualizerController
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +51,8 @@ class AppContainer(context: Context) {
         File(appContext.filesDir, "lyrics"),
         userAgent = "Tempo/${BuildConfig.VERSION_NAME} (Android music player)",
     )
+
+    val equalizer = EqualizerController(settings, appScope)
 
     val streamResolver = StreamResolver(youtube) {
         settings.highQuality.value && !(settings.dataSaverOnCellular.value && NetworkState.isMetered(appContext))

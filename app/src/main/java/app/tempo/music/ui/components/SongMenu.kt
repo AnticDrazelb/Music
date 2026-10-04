@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -168,7 +169,13 @@ private fun SongActionsSheet(target: MenuTarget, state: SongMenuState, onNavigat
                         val minutes = ((end - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1
                         "Sleep Timer · $minutes min left"
                     } ?: "Sleep Timer"
-                    SheetAction(Icons.Rounded.Bedtime, label, showDivider = false) { act { state.showSleepTimer = true } }
+                    SheetAction(Icons.Rounded.Bedtime, label) { act { state.showSleepTimer = true } }
+                    SheetAction(Icons.Rounded.GraphicEq, "Equalizer", showDivider = false) {
+                        act {
+                            onNavigateAway()
+                            navigator.equalizer()
+                        }
+                    }
                 }
             }
             SheetGroup {

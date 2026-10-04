@@ -55,7 +55,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -90,6 +89,8 @@ import app.tempo.music.ui.navigation.LocalPlayer
 import app.tempo.music.ui.navigation.Navigator
 import app.tempo.music.ui.navigation.SearchRoute
 import app.tempo.music.ui.navigation.SettingsRoute
+import app.tempo.music.ui.navigation.EqualizerRoute
+import app.tempo.music.ui.navigation.route
 import app.tempo.music.ui.navigation.Tab
 import app.tempo.music.ui.navigation.TopArtistsRoute
 import app.tempo.music.ui.navigation.UserPlaylistRoute
@@ -107,6 +108,7 @@ import app.tempo.music.ui.screens.player.MiniPlayer
 import app.tempo.music.ui.screens.player.NowPlayingScreen
 import app.tempo.music.ui.screens.search.SearchScreen
 import app.tempo.music.ui.screens.settings.SettingsScreen
+import app.tempo.music.ui.screens.settings.EqualizerScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -115,12 +117,6 @@ import kotlinx.coroutines.launch
 private fun NavDestination.isTabRoot() =
     hasRoute<HomeRoute>() || hasRoute<BrowseRoute>() || hasRoute<SearchRoute>() || hasRoute<LibraryRoute>()
 
-private fun Tab.route(): Any = when (this) {
-    Tab.HOME -> HomeRoute
-    Tab.BROWSE -> BrowseRoute
-    Tab.SEARCH -> SearchRoute
-    Tab.LIBRARY -> LibraryRoute
-}
 
 @Composable
 fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHandled: () -> Unit) {
@@ -202,11 +198,7 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
             // Re-selecting a tab pops back to its root, like iOS.
             navController.popBackStack(target.route(), inclusive = false)
         } else {
-            navController.navigate(target.route()) {
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
+            navigator.showTab(target)
         }
         tab = target
     }
@@ -242,6 +234,7 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
                 composable<SearchRoute> { SearchScreen() }
                 composable<LibraryRoute> { LibraryScreen() }
                 composable<SettingsRoute> { SettingsScreen() }
+                composable<EqualizerRoute> { EqualizerScreen() }
                 composable<ChartRoute> { entry ->
                     val r = entry.toRoute<ChartRoute>()
                     ChartScreen(r.kind, r.country, r.limit)

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import app.tempo.music.AppContainer
 import app.tempo.music.data.model.ArtistRef
@@ -19,6 +20,7 @@ import kotlinx.serialization.Serializable
 @Serializable object SearchRoute
 @Serializable object LibraryRoute
 @Serializable object SettingsRoute
+@Serializable object EqualizerRoute
 
 @Serializable data class ChartRoute(val kind: String, val country: String, val limit: Int = 100)
 @Serializable data class TopArtistsRoute(val country: String)
@@ -49,11 +51,27 @@ enum class LibrarySection(val title: String) {
 
 enum class Tab { HOME, BROWSE, SEARCH, LIBRARY }
 
+fun Tab.route(): Any = when (this) {
+    Tab.HOME -> HomeRoute
+    Tab.BROWSE -> BrowseRoute
+    Tab.SEARCH -> SearchRoute
+    Tab.LIBRARY -> LibraryRoute
+}
+
 // ---- navigator
 
 class Navigator(val nav: NavHostController) {
     fun back() {
         nav.popBackStack()
+    }
+
+    /** Switches tab, keeping each tab's own history like iOS. */
+    fun showTab(tab: Tab) {
+        nav.navigate(tab.route()) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     fun chart(kind: ChartKind, country: String, limit: Int = 100) {
@@ -70,6 +88,7 @@ class Navigator(val nav: NavHostController) {
     fun userPlaylist(id: Long) = nav.navigate(UserPlaylistRoute(id))
     fun library(section: LibrarySection) = nav.navigate(LibrarySectionRoute(section.name))
     fun settings() = nav.navigate(SettingsRoute)
+    fun equalizer() = nav.navigate(EqualizerRoute)
 }
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("No Navigator") }

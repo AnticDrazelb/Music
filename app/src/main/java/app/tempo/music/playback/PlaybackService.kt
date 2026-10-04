@@ -20,6 +20,7 @@ import androidx.media3.session.MediaSessionService
 import app.tempo.music.MainActivity
 import app.tempo.music.R
 import app.tempo.music.TempoApp
+import app.tempo.music.playback.eq.EqualizerRenderersFactory
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -61,7 +62,7 @@ class PlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        player = ExoPlayer.Builder(this)
+        player = ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state))
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(music, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
@@ -74,7 +75,7 @@ class PlaybackService : MediaSessionService() {
             createSecondary = {
                 // Only ever plays the outgoing song's last seconds; the main player keeps audio
                 // focus, the wake lock and the media session.
-                ExoPlayer.Builder(this)
+                ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state))
                     .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                     .setAudioAttributes(music, /* handleAudioFocus = */ false)
                     .build()
