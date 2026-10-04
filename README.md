@@ -20,14 +20,24 @@ An Apple Music–style music player for Android that streams from YouTube.
 - **Charts**: official YouTube Charts. Top 40 and Top 100 songs and top artists, for Global
   and about 60 countries. Charts update weekly and show rank movement (▲ ▼ NEW). Chart songs
   use the official audio ("art track") rather than the music video.
-- **Home**: Top Picks, Recently Played, Top Songs, Top Artists, and playlist shelves that
-  rotate daily.
+- **Home**: Made for You, Top Picks, Recently Played, Top Songs, Top Artists, and playlist
+  shelves that rotate daily.
+- **Made for You**: mixes built every day from what you play and love. Three Daily Mixes, each
+  around one of your favourite artists with your own songs by them mixed into similar music; a
+  Discovery Mix of songs you haven't heard; a Favourites Mix; and Replay, your most played
+  songs.
+- **Artist and album pages**: from YouTube Music. An artist's header photo, subscribers, bio,
+  top songs (with See All) and YouTube Music's own rows (Albums, Singles & EPs, Fans might also
+  like, …), each with See All to the full list. Albums show their real track list and artwork.
 - **Browse**: chart tiles, 16 genres and 12 moods/activities. Each has its own page with
   top songs and playlists.
 - **Search**: live suggestions, recent searches, and filters for Songs, Albums, Artists and
   Playlists. Results load more as you scroll.
 - **Similar songs**: "Create Station" builds a radio from any song. **Autoplay (∞)** keeps
   adding similar songs when your queue runs out.
+- **Save as Playlist**: keep a radio station, the current queue or a mix as one of your
+  playlists. Tap Save next to Playing Next (or ⋯ → Save Queue as Playlist), name it, and
+  switch on Download for offline to save every song at the same time.
 - **Now Playing**: the background colour comes from the artwork. The artwork shrinks when
   paused. Includes a scrubber, volume, a ♥ favourite button, share, and a queue with
   shuffle, repeat, autoplay, drag-to-reorder and swipe-to-remove. The sleep timer is in the
@@ -49,12 +59,18 @@ An Apple Music–style music player for Android that streams from YouTube.
   albums, playlists and artists. All stored on the device.
 - **Background playback**: lock-screen and notification controls, Bluetooth/headset
   buttons, and audio focus. Replays come from a 512 MB on-device audio cache.
+- **Android Auto**: Made for You, your Library (favourites, playlists, downloads, recently
+  played) and the Top 100 charts on the car screen, with artwork, search and voice ("Hey
+  Google, play Coldplay on Tempo"). Picking a song plays the whole list from there. Android
+  Auto only lists apps installed from the Play Store until you allow unknown sources: in the
+  Android Auto settings, tap Version repeatedly to turn on developer mode, then ⋮ → Developer
+  settings → Unknown sources.
 - **Share a YouTube or YouTube Music link** to Tempo to play it.
 - Light and dark mode follow the system setting. The app is locked to portrait.
 
 ## Install
 
-1. Download `Tempo-1.5.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.6.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
@@ -79,8 +95,10 @@ sign an APK that Android will accept as an update to Tempo.
 | Layer | Notes |
 | --- | --- |
 | UI | Kotlin, Jetpack Compose, Material 3 restyled to look like iOS/Apple Music |
-| Playback | Media3 ExoPlayer in a `MediaSessionService`. A resolving data source turns `tempo://youtube/<id>` into a signed audio URL just before playback. |
-| YouTube | [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) for search, stream URLs, albums and channels. YouTube Music's own web API (`data/youtube/YouTubeMusicApi.kt`) for playlists and radio, because it lists music videos under their catalogue title and artists. |
+| Playback | Media3 ExoPlayer in a `MediaLibraryService`. A resolving data source turns `tempo://youtube/<id>` into a signed audio URL just before playback. |
+| Android Auto | `playback/LibraryTree.kt` is what media browsers see. A song's id carries its list (`favourites::<videoId>`), so tapping it queues the whole list. The car only loads `content://` images, so `ArtworkProvider` serves YouTube artwork (and nothing else) from a cache. |
+| Mixes | `data/mixes/Mixes.kt`. Picks favourite artists and seed songs from play counts and favourites, builds a radio station from each, and keeps the day's mixes in a file. |
+| YouTube | [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) for search and stream URLs. YouTube Music's own web API (`data/youtube/YouTubeMusicApi.kt`) for artist pages, albums, playlists and radio, because it lists music videos under their catalogue title and artists. NewPipe is the fallback when YouTube Music doesn't answer. |
 | Titles | Uploads that only exist as videos are cleaned in `YouTubeUtils.splitTitle`: "Haddaway - What Is Love (Official 4K Video)" by the channel "DECADR" becomes "What Is Love" by Haddaway. Songs saved by older versions are cleaned once on upgrade. |
 | Artwork | `ArtworkInterceptor` asks for each image at the size it's drawn: album art up to 1200 px, video stills as the 1280×720 version (falling back when a video has none). |
 | Charts | `charts.youtube.com` browse API (`data/charts/ChartsRepository.kt`) |

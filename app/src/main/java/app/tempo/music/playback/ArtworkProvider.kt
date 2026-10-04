@@ -23,6 +23,7 @@ class ArtworkProvider : ContentProvider() {
     companion object {
         private const val AUTHORITY = "${BuildConfig.APPLICATION_ID}.artwork"
         private val allowedHosts = listOf("googleusercontent.com", "ggpht.com", "ytimg.com")
+        private const val MAX_CACHED = 500
 
         fun uriFor(imageUrl: String): Uri =
             Uri.Builder().scheme("content").authority(AUTHORITY).appendPath("image")
@@ -44,8 +45,18 @@ class ArtworkProvider : ContentProvider() {
         if (candidates.isEmpty()) throw FileNotFoundException(url)
         val context = context ?: throw FileNotFoundException(url)
         val file = File(context.cacheDir, "car-artwork/${sha1(url)}.jpg")
-        if (!file.exists() && candidates.none { download(it, file) }) throw FileNotFoundException(url)
+        if (!file.exists()) {
+            if (candidates.none { download(it, file) }) throw FileNotFoundException(url)
+            trim(file.parentFile)
+        }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    }
+
+    /** Keeps the newest images, so the cache doesn't grow forever. */
+    private fun trim(dir: File?) {
+        val files = dir?.listFiles { f -> f.name.endsWith(".jpg") } ?: return
+        if (files.size <= MAX_CACHED) return
+        files.sortedBy { it.lastModified() }.take(files.size - MAX_CACHED * 4 / 5).forEach { it.delete() }
     }
 
     private fun download(url: String, file: File): Boolean = runCatching {
