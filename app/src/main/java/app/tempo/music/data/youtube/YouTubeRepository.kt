@@ -41,6 +41,11 @@ import org.schabi.newpipe.extractor.Page as NewPipePage
  */
 class YouTubeRepository(private val client: OkHttpClient) {
 
+    companion object {
+        /** Longer "songs" are almost always mixes or compilations. */
+        const val MAX_SONG_SECONDS = 15 * 60L
+    }
+
     private val service: StreamingService get() = ServiceList.YouTube
 
     fun init(countryCode: String) {
@@ -89,7 +94,9 @@ class YouTubeRepository(private val client: OkHttpClient) {
                 // The YouTube Music catalogue isn't offered in every region; fall back to
                 // regular YouTube results so search still finds something playable.
                 val fallback = search(query, SearchFilter.VIDEOS, null)
-                return@withContext Page(fallback.items.filterIsInstance<Song>(), fallback.nextPage)
+                // Skip hour-long compilations; they aren't songs.
+                val songs = fallback.items.filterIsInstance<Song>().filter { it.durationSec <= MAX_SONG_SECONDS }
+                return@withContext Page(songs, fallback.nextPage)
             }
             Page(items, next?.takeIf { NewPipePage.isValid(it) })
         }

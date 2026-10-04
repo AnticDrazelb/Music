@@ -213,7 +213,7 @@ class PlaybackService : MediaSessionService() {
             val existing = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
             val fresh = songs
                 .filter { it.id !in existing }
-                .filter { it.durationSec !in 601..Long.MAX_VALUE } // skip hour-long compilations
+                .filter { it.durationSec <= 600 } // skip long mixes and compilations
                 .take(15)
             if (fresh.isEmpty()) return@launch
             val wasEnded = player.playbackState == Player.STATE_ENDED

@@ -11,3 +11,6 @@ build/
 *.jks
 *.keystore
 keystore.properties
+!signing/tempo-release.jks
+!signing/keystore.properties
+app/screenshots/

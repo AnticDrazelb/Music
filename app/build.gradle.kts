@@ -9,10 +9,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Release signing is read from keystore.properties (not committed). Without it,
-// release builds fall back to the debug key so `assembleRelease` always works.
+// Release signing key lives in signing/ (committed: the repository is private) so every
+// build can update an installed copy. Without it, release builds use the debug key.
 val keystoreProps = Properties().apply {
-    val file = rootProject.file("keystore.properties")
+    val file = rootProject.file("signing/keystore.properties")
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
@@ -80,8 +80,17 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
         unitTests.all { test ->
             test.systemProperty("live", System.getProperty("live") ?: "false")
+            test.systemProperty("screenshots", System.getProperty("screenshots") ?: "false")
+            test.systemProperty("roborazzi.test.record", "true")
+            test.systemProperty("robolectric.pixelCopyRenderMode", "hardware")
+            test.systemProperty(
+                "robolectric.dependency.repo.url",
+                "https://maven-central.storage-download.googleapis.com/maven2",
+            )
+            test.maxHeapSize = "3g"
             test.testLogging { showStandardStreams = true }
         }
     }
@@ -140,4 +149,10 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

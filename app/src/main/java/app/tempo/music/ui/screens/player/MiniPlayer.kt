@@ -36,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.tempo.music.ui.components.Artwork
@@ -64,7 +66,8 @@ fun MiniPlayer(onExpand: () -> Unit, modifier: Modifier = Modifier) {
             .shadow(14.dp, RoundedCornerShape(16.dp), ambientColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f))
             .clip(RoundedCornerShape(16.dp))
             .background(if (dark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onExpand)
+            .clickable(onClickLabel = "Open Now Playing", onClick = onExpand)
+            .semantics { contentDescription = "Now Playing: ${song.title}" }
             .pointerInput(Unit) {
                 detectVerticalDragGestures { change, dragAmount ->
                     if (dragAmount < -12) {

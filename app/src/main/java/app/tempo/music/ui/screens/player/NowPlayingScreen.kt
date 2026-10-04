@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -560,10 +561,23 @@ private fun QueueRow(entry: QueueEntry, modifier: Modifier = Modifier, dimmed: B
         modifier = modifier,
         onDismiss = { value -> if (value == SwipeToDismissBoxValue.EndToStart) player.removeFromQueue(entry) },
         backgroundContent = {
-            Box(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFFFF3B30)).padding(end = 16.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) { Text("Remove", color = Color.White, fontWeight = FontWeight.SemiBold) }
+            // Reveal a red "Remove" area only as far as the row has been swiped.
+            val offset = runCatching { dismissState.requireOffset() }.getOrDefault(0f)
+            val revealed = with(LocalDensity.current) { (-offset).coerceAtLeast(0f).toDp() }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+                if (revealed > 0.dp) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .width(revealed)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFFF3B30)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (revealed > 72.dp) Text("Remove", color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                }
+            }
         },
     ) {
         Row(
