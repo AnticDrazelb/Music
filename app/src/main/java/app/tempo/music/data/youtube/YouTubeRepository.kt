@@ -2,6 +2,8 @@ package app.tempo.music.data.youtube
 
 import app.tempo.music.data.model.ArtistDetail
 import app.tempo.music.data.model.ArtistRef
+import app.tempo.music.data.model.BrowseRef
+import app.tempo.music.data.model.ArtistSection
 import app.tempo.music.data.model.CollectionDetail
 import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.data.model.CollectionType
@@ -44,6 +46,8 @@ class YouTubeRepository(private val client: OkHttpClient) {
     companion object {
         /** Longer "songs" are almost always mixes or compilations. */
         const val MAX_SONG_SECONDS = 15 * 60L
+        private const val ALBUMS = "Albums"
+        private const val PLAYLISTS = "Playlists"
     }
 
     private val service: StreamingService get() = ServiceList.YouTube
@@ -190,14 +194,17 @@ class YouTubeRepository(private val client: OkHttpClient) {
 
     /**
      * Playlists read through YouTube Music, which lists each track under its catalogue title and
-     * artists instead of the upload's "Artist - Song (Official 4K Video)". Albums stay on YouTube.
+     * artists instead of the upload's "Artist - Song (Official 4K Video)". Album pages (MPREb_)
+     * only exist there.
      */
     private fun musicCollection(url: String): CollectionDetail? {
-        val id = YouTubeUtils.playlistId(url) ?: return null
-        val isAlbum = id.startsWith("OLAK5uy_") || id.startsWith("MPREb_")
-        val isMix = id.startsWith("RD") && !id.startsWith("RDCLAK")
-        if (isAlbum || isMix) return null
-        val page = runCatching { music.playlist(id) }.getOrNull()?.takeIf { it.songs.isNotEmpty() } ?: return null
+        val page = YouTubeUtils.albumBrowseId(url)?.let { music.album(it) }
+            ?: run {
+                val id = YouTubeUtils.playlistId(url) ?: return null
+                if (id.startsWith("RD") && !id.startsWith("RDCLAK")) return null // mixes stay on YouTube
+                runCatching { music.playlist(id) }.getOrNull()
+            }
+        if (page == null || page.songs.isEmpty()) return null
         return CollectionDetail(
             ref = CollectionRef(
                 url = url,
@@ -227,7 +234,58 @@ class YouTubeRepository(private val client: OkHttpClient) {
 
     // ---------------------------------------------------------------- artists
 
-    suspend fun artist(url: String): ArtistDetail = coroutineScope {
+    /**
+     * An artist page from YouTube Music (top songs, albums, singles, similar artists...). Anything
+     * it doesn't provide comes from the YouTube channel instead.
+     */
+    suspend fun artist(url: String): ArtistDetail = withContext(Dispatchers.IO) {
+        val page = YouTubeUtils.channelId(url)?.let { id -> runCatching { music.artist(id) }.getOrNull() }
+        val sections = page?.sections.orEmpty().map { section ->
+            ArtistSection(section.title, section.items, section.more?.let { BrowseRef(it.browseId, it.params, section.title) })
+        }
+        val allSongs = page?.songsPlaylistId?.let { id ->
+            CollectionRef(YouTubeUtils.musicPlaylistUrl(id), title = "${page.name.orEmpty()} Songs".trim())
+        }
+        if (page?.name != null && page.songs.isNotEmpty() && sections.isNotEmpty()) {
+            return@withContext ArtistDetail(
+                ref = ArtistRef(url, page.name, page.thumbnailUrl, page.subscribers),
+                bannerUrl = null,
+                description = page.description,
+                topSongs = page.songs,
+                sections = sections,
+                allSongs = allSongs,
+            )
+        }
+
+        val channel = channelArtist(url)
+        val hasAlbums = sections.any { s -> s.items.any { (it as? CollectionRef)?.type == CollectionType.ALBUM } }
+        val hasPlaylists = sections.any { s -> s.items.any { (it as? CollectionRef)?.type == CollectionType.PLAYLIST } }
+        ArtistDetail(
+            ref = ArtistRef(
+                url = url,
+                name = page?.name ?: channel.ref.name,
+                thumbnailUrl = page?.thumbnailUrl ?: channel.ref.thumbnailUrl,
+                subscribers = page?.subscribers?.takeIf { it > 0 } ?: channel.ref.subscribers,
+            ),
+            bannerUrl = channel.bannerUrl,
+            description = page?.description ?: channel.description,
+            topSongs = page?.songs?.takeIf { it.isNotEmpty() } ?: channel.topSongs,
+            sections = buildList {
+                channel.sections.firstOrNull { it.title == ALBUMS }?.takeIf { !hasAlbums }?.let(::add)
+                addAll(sections)
+                channel.sections.firstOrNull { it.title == PLAYLISTS }?.takeIf { !hasPlaylists }?.let(::add)
+            },
+            allSongs = allSongs,
+        )
+    }
+
+    /** Everything behind a section's "See All", e.g. an artist's full discography. */
+    suspend fun browse(ref: BrowseRef): List<MusicItem> = withContext(Dispatchers.IO) {
+        music.browseItems(YouTubeMusicApi.BrowseTarget(ref.browseId, ref.params))
+    }
+
+    /** The artist built from their YouTube channel: name, uploads, releases and playlists. */
+    private suspend fun channelArtist(url: String): ArtistDetail = coroutineScope {
         val info = withContext(Dispatchers.IO) { ChannelInfo.getInfo(service, url) }
         val name = YouTubeUtils.cleanArtist(info.name)
 
@@ -248,7 +306,7 @@ class YouTubeRepository(private val client: OkHttpClient) {
         }
         val top = async {
             val songs = runCatching { songsFor(name) }.getOrDefault(emptyList())
-                .filter { it.artist.contains(name, ignoreCase = true) }
+                .filter { YouTubeUtils.credits(it.artist, name) }
                 .take(10)
             // Fall back to the channel's uploads when the music catalogue has nothing.
             songs.ifEmpty {
@@ -273,8 +331,8 @@ class YouTubeRepository(private val client: OkHttpClient) {
             bannerUrl = info.banners.maxByOrNull { it.width }?.url,
             description = info.description,
             topSongs = top.await(),
-            albums = albums.await(),
-            playlists = playlists.await(),
+            sections = listOf(ArtistSection(ALBUMS, albums.await()), ArtistSection(PLAYLISTS, playlists.await()))
+                .filter { it.items.isNotEmpty() },
         )
     }
 
@@ -284,6 +342,7 @@ class YouTubeRepository(private val client: OkHttpClient) {
         "music.youtube.com" in url || YouTubeUtils.playlistId(url)?.startsWith("OLAK5uy_") == true
 
     private fun collectionType(url: String): CollectionType {
+        if (YouTubeUtils.albumBrowseId(url) != null) return CollectionType.ALBUM
         val id = YouTubeUtils.playlistId(url).orEmpty()
         return when {
             id.startsWith("OLAK5uy_") || id.startsWith("MPREb_") -> CollectionType.ALBUM

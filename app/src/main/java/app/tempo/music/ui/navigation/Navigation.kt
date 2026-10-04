@@ -8,6 +8,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import app.tempo.music.AppContainer
 import app.tempo.music.data.model.ArtistRef
+import app.tempo.music.data.model.BrowseRef
 import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.playback.PlayerConnection
@@ -21,6 +22,7 @@ import kotlinx.serialization.Serializable
 @Serializable object LibraryRoute
 @Serializable object SettingsRoute
 @Serializable object EqualizerRoute
+@Serializable data class BrowseItemsRoute(val browseId: String, val params: String?, val title: String)
 
 @Serializable data class ChartRoute(val kind: String, val country: String, val limit: Int = 100)
 @Serializable data class TopArtistsRoute(val country: String)
@@ -89,6 +91,7 @@ class Navigator(val nav: NavHostController) {
     fun library(section: LibrarySection) = nav.navigate(LibrarySectionRoute(section.name))
     fun settings() = nav.navigate(SettingsRoute)
     fun equalizer() = nav.navigate(EqualizerRoute)
+    fun browse(ref: BrowseRef) = nav.navigate(BrowseItemsRoute(ref.browseId, ref.params, ref.title))
 }
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("No Navigator") }

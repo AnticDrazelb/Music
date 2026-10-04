@@ -24,6 +24,11 @@ object YouTubeUtils {
     fun watchUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId"
     fun channelUrl(channelId: String) = "https://www.youtube.com/channel/$channelId"
     fun playlistUrl(playlistId: String) = "https://www.youtube.com/playlist?list=$playlistId"
+    fun musicPlaylistUrl(playlistId: String) = "https://music.youtube.com/playlist?list=$playlistId"
+    private val channelIdPattern = Regex("""/channel/(UC[A-Za-z0-9_-]{10,})""")
+    fun channelId(url: String?): String? = url?.let { channelIdPattern.find(it)?.groupValues?.get(1) }
+    private val albumIdPattern = Regex("""/browse/(MPREb_[A-Za-z0-9_-]+)""")
+    fun albumBrowseId(url: String?): String? = url?.let { albumIdPattern.find(it)?.groupValues?.get(1) }
     fun radioUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId&list=RDAMVM$videoId"
 
     /** Picks the largest thumbnail and asks Google's image CDN for a crisp square-ish size. */
@@ -219,5 +224,13 @@ object YouTubeUtils {
         val channel = uploader.orEmpty()
         return channel.endsWith(" - Topic") || channel.contains("VEVO", ignoreCase = true) ||
             musicMarker.containsMatchIn(rawTitle) || dashSplit.containsMatchIn(rawTitle)
+    }
+
+    private val creditSplit = Regex("""\s*(?:,|&|\+|/|\bx\b|\bfeat\.?|\bft\.?|\bwith\b|\band\b)\s*""", RegexOption.IGNORE_CASE)
+
+    /** True when [artistName] is one of the artists credited in [credits] ("Drake & Sexyy Red", "DRAKE FT. X"). */
+    fun credits(credits: String, artistName: String): Boolean {
+        val wanted = normalized(artistName)
+        return wanted.isNotEmpty() && credits.split(creditSplit).any { normalized(it) == wanted }
     }
 }

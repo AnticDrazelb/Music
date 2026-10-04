@@ -5,6 +5,10 @@ import app.tempo.music.data.charts.int
 import app.tempo.music.data.charts.jsonObj
 import app.tempo.music.data.charts.path
 import app.tempo.music.data.charts.str
+import app.tempo.music.data.model.ArtistRef
+import app.tempo.music.data.model.CollectionRef
+import app.tempo.music.data.model.CollectionType
+import app.tempo.music.data.model.MusicItem
 import app.tempo.music.data.model.Song
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -36,6 +40,38 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
         val thumbnailUrl: String?,
         val songs: List<Song>,
         val continuation: String?,
+    )
+
+    data class ArtistPage(
+        val name: String?,
+        val description: String?,
+        val thumbnailUrl: String?,
+        val subscribers: Long,
+        val songs: List<Song>,
+        /** Playlist of all the artist's songs, behind "See All". */
+        val songsPlaylistId: String?,
+        val sections: List<Section>,
+    )
+
+    /** A row on an artist page ("Albums", "Singles & EPs", "Fans might also like"...), titled by YouTube Music. */
+    data class Section(val title: String, val items: List<MusicItem>, val more: BrowseTarget?)
+
+    data class BrowseTarget(val browseId: String, val params: String?)
+
+    fun artist(channelId: String): ArtistPage = parseArtist(post("browse", buildJsonObject { put("browseId", channelId) }))
+
+    /** An album page (MPREb_ id): tracks, with the album's artist and art filled in. */
+    fun album(browseId: String): PlaylistPage = parseAlbum(post("browse", buildJsonObject { put("browseId", browseId) }))
+
+    /** Everything behind a section's "See All" (all albums, all singles...). */
+    fun browseItems(target: BrowseTarget): List<MusicItem> = parseItems(
+        post(
+            "browse",
+            buildJsonObject {
+                put("browseId", target.browseId)
+                target.params?.let { put("params", it) }
+            },
+        ),
     )
 
     fun playlist(playlistId: String): PlaylistPage =
@@ -110,6 +146,131 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
             )
         }
 
+        internal fun parseArtist(root: JsonObject): ArtistPage {
+            val header = listOf("musicImmersiveHeaderRenderer", "musicVisualHeaderRenderer", "musicResponsiveHeaderRenderer")
+                .firstNotNullOfOrNull { findAll(root, it).firstOrNull() }
+            val shelf = findAll(root, "musicShelfRenderer").firstOrNull()
+            val sections = findAll(root, "musicCarouselShelfRenderer").mapNotNull { carousel ->
+                val titleRun = carousel.path("header", "musicCarouselShelfBasicHeaderRenderer", "title", "runs").arr?.firstOrNull()
+                val title = titleRun.path("text").str?.trim().orEmpty()
+                val items = carousel["contents"].arr.orEmpty().mapNotNull { parseCarouselItem(it.jsonObj) }
+                    .distinctBy { it.key }
+                if (title.isEmpty() || items.isEmpty()) null else Section(title, items, browseTarget(titleRun.path("navigationEndpoint")))
+            }
+            return ArtistPage(
+                name = header?.let { text(it["title"]) }?.ifBlank { null },
+                description = header?.let { text(it["description"]) }?.ifBlank { null },
+                thumbnailUrl = header?.let { largestThumbnail(it) },
+                subscribers = header?.let {
+                    parseCount(text(it.path("subscriptionButton", "subscribeButtonRenderer", "subscriberCountText")))
+                } ?: -1,
+                songs = shelf?.get("contents").arr.orEmpty().mapNotNull { it.path("musicResponsiveListItemRenderer").jsonObj }
+                    .mapNotNull(::parseListItem).distinctBy { it.id },
+                songsPlaylistId = shelf.path("title", "runs").arr?.firstOrNull()
+                    .path("navigationEndpoint", "browseEndpoint", "browseId").str
+                    ?.takeIf { it.startsWith("VL") }?.removePrefix("VL"),
+                sections = sections,
+            )
+        }
+
+        internal fun parseAlbum(root: JsonObject): PlaylistPage {
+            val page = parsePlaylist(root)
+            val header = listOf("musicResponsiveHeaderRenderer", "musicDetailHeaderRenderer")
+                .firstNotNullOfOrNull { findAll(root, it).firstOrNull() }
+            val artistRuns = header.path("straplineTextOne", "runs").arr
+                ?: header.path("subtitle", "runs").arr.orEmpty().dropWhile { it.path("text").str != SEPARATOR }.drop(1)
+                    .takeWhile { it.path("text").str != SEPARATOR }
+            val artist = artistRuns.joinToString("") { it.path("text").str.orEmpty() }.trim().ifBlank { page.subtitle.orEmpty() }
+            val artistUrl = artistRuns.firstNotNullOfOrNull { it.path("navigationEndpoint", "browseEndpoint", "browseId").str }
+                ?.takeIf { it.startsWith("UC") }?.let(YouTubeUtils::channelUrl)
+            // Album tracks usually leave out the artist and the art: they're the album's.
+            return page.copy(
+                subtitle = artist.ifBlank { null },
+                songs = page.songs.map { song ->
+                    song.copy(
+                        artist = if (song.artist == YouTubeUtils.UNKNOWN_ARTIST && artist.isNotBlank()) artist else song.artist,
+                        artistUrl = song.artistUrl ?: artistUrl,
+                        album = song.album ?: page.title,
+                        thumbnailUrl = song.thumbnailUrl ?: page.thumbnailUrl,
+                    )
+                },
+            )
+        }
+
+        internal fun parseItems(root: JsonObject): List<MusicItem> =
+            (findAll(root, "musicTwoRowItemRenderer") + findAll(root, "musicResponsiveListItemRenderer"))
+                .mapNotNull { parseCarouselItem(it, wrapped = false) }
+                .distinctBy { it.key }
+
+        /** A carousel tile: an album, single, playlist, artist or video. */
+        private fun parseCarouselItem(element: JsonObject?, wrapped: Boolean = true): MusicItem? {
+            val item = if (wrapped) {
+                element?.get("musicTwoRowItemRenderer").jsonObj ?: element?.get("musicResponsiveListItemRenderer").jsonObj?.let {
+                    return parseListItem(it)
+                }
+            } else {
+                element
+            } ?: return null
+            if ("flexColumns" in item) return parseListItem(item)
+            val title = text(item["title"]).ifBlank { return null }
+            val subtitle = text(item["subtitle"]).ifBlank { null }
+            val endpoint = item["navigationEndpoint"] ?: item.path("title", "runs").arr?.firstOrNull().path("navigationEndpoint")
+            val browseId = endpoint.path("browseEndpoint", "browseId").str
+            val pageType = endpoint.path(
+                "browseEndpoint", "browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType",
+            ).str
+            val thumbnail = largestThumbnail(item)
+            val videoId = endpoint.path("watchEndpoint", "videoId").str
+            return when {
+                browseId != null && (browseId.startsWith("MPREb_") || pageType == "MUSIC_PAGE_TYPE_ALBUM") -> CollectionRef(
+                    url = albumUrl(browseId),
+                    title = title,
+                    subtitle = subtitle,
+                    thumbnailUrl = thumbnail,
+                    type = CollectionType.ALBUM,
+                )
+                browseId != null && browseId.startsWith("UC") -> ArtistRef(
+                    url = YouTubeUtils.channelUrl(browseId),
+                    name = title,
+                    thumbnailUrl = thumbnail,
+                    subscribers = parseCount(subtitle.orEmpty()),
+                )
+                browseId != null && browseId.startsWith("VL") -> CollectionRef(
+                    url = YouTubeUtils.musicPlaylistUrl(browseId.removePrefix("VL")),
+                    title = title,
+                    subtitle = subtitle,
+                    thumbnailUrl = thumbnail,
+                )
+                videoId != null -> {
+                    // A video tile: "Never Gonna Give You Up" over "Rick Astley • 1.8B views".
+                    val channel = subtitle?.substringBefore(SEPARATOR)?.trim()
+                    val (songTitle, artist) = YouTubeUtils.splitTitle(title, channel, artistIsReliable = true)
+                    Song(id = videoId, title = songTitle, artist = artist, thumbnailUrl = thumbnail, isVideo = true)
+                }
+                else -> null
+            }
+        }
+
+        private fun browseTarget(endpoint: JsonElement?): BrowseTarget? {
+            val id = endpoint.path("browseEndpoint", "browseId").str ?: return null
+            return BrowseTarget(id, endpoint.path("browseEndpoint", "params").str)
+        }
+
+        fun albumUrl(browseId: String) = "https://music.youtube.com/browse/$browseId"
+
+        /** "4.55M subscribers" -> 4550000. */
+        internal fun parseCount(text: String): Long {
+            val m = Regex("""([\d.,]+)\s*([KMB])?""", RegexOption.IGNORE_CASE).find(text) ?: return -1
+            val number = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return -1
+            val scale = when (m.groupValues[2].uppercase()) {
+                "K" -> 1e3
+                "M" -> 1e6
+                "B" -> 1e9
+                else -> 1.0
+            }
+            return (number * scale).toLong()
+        }
+
         internal fun parseRadio(root: JsonObject): List<Song> =
             findAll(root, "playlistPanelVideoRenderer").mapNotNull(::parsePanelItem).distinctBy { it.id }
 
@@ -122,7 +283,12 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
                 ?: return null
             val title = text(columns.getOrNull(0)).ifBlank { return null }
             val bylineRuns = columns.getOrNull(1).path("runs").arr.orEmpty()
-            val album = text(columns.getOrNull(2)).ifBlank { null }
+            // The album is the column linking to an album page (artist pages put play counts in between).
+            val album = columns.drop(1).firstOrNull { column ->
+                column.path("runs").arr.orEmpty().any {
+                    it.path("navigationEndpoint", "browseEndpoint", "browseId").str?.startsWith("MPREb_") == true
+                }
+            }?.let(::text) ?: text(columns.getOrNull(2)).takeIf { it.isNotBlank() && it.none(Char::isDigit) }
             val duration = item["fixedColumns"].arr?.firstOrNull()
                 .path("musicResponsiveListItemFixedColumnRenderer", "text").let(::text)
             return song(videoId, title, bylineRuns, album, duration, largestThumbnail(item), videoType(item))
@@ -184,6 +350,7 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
                 item.path("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
                 item.path("thumbnail", "croppedSquareThumbnailRenderer", "thumbnail", "thumbnails"),
                 item.path("thumbnail", "thumbnails"),
+                item.path("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
             ).firstNotNullOfOrNull { it.arr } ?: findAll(item, "thumbnails", arrays = true).firstOrNull()?.get("thumbnails").arr
             return list.orEmpty().mapNotNull { it.jsonObj }
                 .maxByOrNull { it["width"].int ?: 0 }?.get("url").str

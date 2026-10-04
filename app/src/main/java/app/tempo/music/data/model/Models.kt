@@ -59,9 +59,17 @@ data class ArtistDetail(
     val bannerUrl: String?,
     val description: String?,
     val topSongs: List<Song>,
-    val albums: List<CollectionRef>,
-    val playlists: List<CollectionRef>,
+    /** Rows after Top Songs, in YouTube Music's order: albums, singles, videos, similar artists... */
+    val sections: List<ArtistSection>,
+    /** Every song by the artist, behind Top Songs' "See All". */
+    val allSongs: CollectionRef? = null,
 )
+
+/** [more] opens the full list behind the row's title. */
+data class ArtistSection(val title: String, val items: List<MusicItem>, val more: BrowseRef? = null)
+
+/** A YouTube Music page listing items, such as an artist's complete discography. */
+data class BrowseRef(val browseId: String, val params: String?, val title: String)
 
 data class Page<T>(val items: List<T>, val nextPage: Any?)
 

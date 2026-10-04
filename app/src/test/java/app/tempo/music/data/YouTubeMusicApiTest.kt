@@ -20,15 +20,23 @@ class YouTubeMusicApiTest {
         else """{"text": "$text", "navigationEndpoint": {"browseEndpoint": {"browseId": "$browseId",
             "browseEndpointContextSupportedConfigs": {"browseEndpointContextMusicConfig": {"pageType": "$pageType"}}}}}"""
 
-    private fun listItem(id: String, title: String, artistRuns: String, type: String, duration: String = "3:33") = """
+    private fun listItem(
+        id: String,
+        title: String,
+        artistRuns: String,
+        type: String,
+        duration: String = "3:33",
+        thumbnail: Boolean = true,
+        moreColumns: String = "",
+    ) = """
         {"musicResponsiveListItemRenderer": {
-          "thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
-            {"url": "https://i.ytimg.com/vi/$id/hqdefault.jpg?sqp=abc", "width": 400, "height": 225}]}}},
+          ${if (thumbnail) """"thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+            {"url": "https://i.ytimg.com/vi/$id/hqdefault.jpg?sqp=abc", "width": 400, "height": 225}]}}},""" else ""}
           "flexColumns": [
             {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "$title",
               "navigationEndpoint": {"watchEndpoint": {"videoId": "$id", "watchEndpointMusicSupportedConfigs":
                 {"watchEndpointMusicConfig": {"musicVideoType": "$type"}}}}}]}}},
-            {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [$artistRuns]}}}
+            {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [$artistRuns]}}}$moreColumns
           ],
           "fixedColumns": [{"musicResponsiveListItemFixedColumnRenderer": {"text": {"runs": [{"text": "$duration"}]}}}],
           "playlistItemData": {"videoId": "$id"}
@@ -91,6 +99,114 @@ class YouTubeMusicApiTest {
         // Rick Astley's own channel is his artist page; DECADR's isn't Haddaway's.
         assertEquals("https://www.youtube.com/channel/UC123", songs[0].artistUrl)
         assertNull(songs[1].artistUrl)
+    }
+
+    private fun column(text: String, browseId: String? = null) =
+        """,{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [${if (browseId == null) run(text) else """{"text": "$text", "navigationEndpoint": {"browseEndpoint": {"browseId": "$browseId"}}}"""}]}}}"""
+
+    private fun tile(title: String, subtitle: String, endpoint: String) = """
+        {"musicTwoRowItemRenderer": {"title": {"runs": [{"text": "$title"}]}, "subtitle": {"runs": [{"text": "$subtitle"}]},
+          "thumbnailRenderer": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+            {"url": "https://lh3.googleusercontent.com/t=w226-h226-l90-rj", "width": 226, "height": 226}]}}},
+          "navigationEndpoint": $endpoint}}"""
+
+    private fun browse(id: String) = """{"browseEndpoint": {"browseId": "$id"}}"""
+
+    private fun carousel(title: String, more: String?, tiles: String) = """
+        {"musicCarouselShelfRenderer": {"header": {"musicCarouselShelfBasicHeaderRenderer": {"title": {"runs": [{"text": "$title"
+          ${if (more != null) """, "navigationEndpoint": {"browseEndpoint": {"browseId": "UCkooks", "params": "$more"}}""" else ""}}]}}},
+          "contents": [$tiles]}}"""
+
+    @Test
+    fun artistPagesHaveTopSongsAndYouTubeMusicRows() {
+        val page = YouTubeMusicApi.parseArtist(
+            parse(
+                """{"header": {"musicImmersiveHeaderRenderer": {
+                    "title": {"runs": [{"text": "The Kooks"}]}, "description": {"runs": [{"text": "British indie band."}]},
+                    "thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+                      {"url": "https://lh3.googleusercontent.com/kooks=w1440-h600-l90-rj", "width": 1440, "height": 600}]}}},
+                    "subscriptionButton": {"subscribeButtonRenderer": {"subscriberCountText": {"runs": [{"text": "1.2M"}]}}}}},
+                   "contents": {"sectionListRenderer": {"contents": [
+                     {"musicShelfRenderer": {"title": {"runs": [{"text": "Top songs", "navigationEndpoint": {"browseEndpoint": {"browseId": "VLOLAK5uy_songs"}}}]},
+                       "contents": [${listItem("naive", "Naive", run("The Kooks", "MUSIC_PAGE_TYPE_ARTIST", "UCkooks"), "MUSIC_VIDEO_TYPE_ATV",
+                           moreColumns = column("612M plays") + column("Inside In / Inside Out", "MPREb_inside"))}]}},
+                     ${carousel("Albums", "ggMIegYIARoCAQI%3D", tile("Inside In / Inside Out", "Album • 2006", browse("MPREb_inside")))},
+                     ${carousel("Videos", null, tile("The Kooks - Naive (Official Video)", "The Kooks • 98M views", """{"watchEndpoint": {"videoId": "jkaMiaRLgvY"}}"""))},
+                     ${carousel("Fans might also like", null, tile("Arctic Monkeys", "8.1M subscribers", browse("UCarctic")) + "," + tile("Empty", "", "{}"))},
+                     ${carousel("Featured on", null, tile("Indie Anthems", "Playlist", browse("VLRDCLAK5uy_indie")))}
+                   ]}}}""",
+            ),
+        )
+        assertEquals("The Kooks", page.name)
+        assertEquals("British indie band.", page.description)
+        assertEquals(1_200_000L, page.subscribers)
+        assertEquals("https://lh3.googleusercontent.com/kooks=w544-h544-l90-rj", page.thumbnailUrl)
+        assertEquals("OLAK5uy_songs", page.songsPlaylistId)
+        assertEquals(listOf("Naive"), page.songs.map { it.title })
+        // The album column is the one linking to an album, not the play count before it.
+        assertEquals("Inside In / Inside Out", page.songs.single().album)
+
+        assertEquals(listOf("Albums", "Videos", "Fans might also like", "Featured on"), page.sections.map { it.title })
+        val album = page.sections[0].items.single() as app.tempo.music.data.model.CollectionRef
+        assertEquals("https://music.youtube.com/browse/MPREb_inside", album.url)
+        assertEquals(app.tempo.music.data.model.CollectionType.ALBUM, album.type)
+        assertEquals(YouTubeMusicApi.BrowseTarget("UCkooks", "ggMIegYIARoCAQI%3D"), page.sections[0].more)
+        val video = page.sections[1].items.single() as app.tempo.music.data.model.Song
+        assertEquals("Naive" to "The Kooks", video.title to video.artist)
+        val similar = page.sections[2].items.single() as app.tempo.music.data.model.ArtistRef
+        assertEquals("https://www.youtube.com/channel/UCarctic", similar.url)
+        assertEquals(8_100_000L, similar.subscribers)
+        val playlist = page.sections[3].items.single() as app.tempo.music.data.model.CollectionRef
+        assertEquals("https://music.youtube.com/playlist?list=RDCLAK5uy_indie", playlist.url)
+    }
+
+    @Test
+    fun albumTracksTakeTheAlbumsArtistAndArt() {
+        val page = YouTubeMusicApi.parseAlbum(
+            parse(
+                """{"header": {"musicResponsiveHeaderRenderer": {
+                    "title": {"runs": [{"text": "Inside In / Inside Out"}]},
+                    "straplineTextOne": {"runs": [{"text": "The Kooks", "navigationEndpoint": {"browseEndpoint": {"browseId": "UCkooks"}}}]},
+                    "subtitle": {"runs": [{"text": "Album"}, {"text": " • "}, {"text": "2006"}]},
+                    "thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+                      {"url": "https://lh3.googleusercontent.com/album=w544-h544-l90-rj", "width": 544, "height": 544}]}}}}},
+                   "contents": {"musicShelfRenderer": {"contents": [
+                     ${listItem("seaside", "Seaside", "", "MUSIC_VIDEO_TYPE_ATV", "1:39", thumbnail = false)},
+                     ${listItem("naive", "Naive", "", "MUSIC_VIDEO_TYPE_ATV", "3:23", thumbnail = false)},
+                     ${listItem("feat", "Ooh La (feat. Someone)", run("The Kooks", "MUSIC_PAGE_TYPE_ARTIST", "UCkooks") + "," + run(" & ") + "," + run("Someone"), "MUSIC_VIDEO_TYPE_ATV", thumbnail = false)}
+                   ]}}}""",
+            ),
+        )
+        assertEquals("Inside In / Inside Out", page.title)
+        assertEquals("The Kooks", page.subtitle)
+        assertEquals(listOf("Seaside", "Naive", "Ooh La (feat. Someone)"), page.songs.map { it.title })
+        assertEquals(listOf("The Kooks", "The Kooks", "The Kooks & Someone"), page.songs.map { it.artist })
+        assertTrue(page.songs.all { it.album == "Inside In / Inside Out" })
+        assertTrue(page.songs.all { it.thumbnailUrl == "https://lh3.googleusercontent.com/album=w544-h544-l90-rj" })
+        assertTrue(page.songs.all { it.artistUrl == "https://www.youtube.com/channel/UCkooks" })
+        assertEquals(listOf(99L, 203L, 213L), page.songs.map { it.durationSec })
+    }
+
+    @Test
+    fun seeAllListsEveryTile() {
+        val items = YouTubeMusicApi.parseItems(
+            parse(
+                """{"contents": {"gridRenderer": {"items": [
+                    ${tile("Inside In / Inside Out", "2006", browse("MPREb_inside"))},
+                    ${tile("Konk", "2008", browse("MPREb_konk"))},
+                    ${tile("Konk", "2008", browse("MPREb_konk"))}
+                  ]}}}""",
+            ),
+        )
+        assertEquals(listOf("Inside In / Inside Out", "Konk"), items.map { (it as app.tempo.music.data.model.CollectionRef).title })
+    }
+
+    @Test
+    fun parsesCounts() {
+        assertEquals(4_550_000L, YouTubeMusicApi.parseCount("4.55M"))
+        assertEquals(932_000L, YouTubeMusicApi.parseCount("932K subscribers"))
+        assertEquals(1_500L, YouTubeMusicApi.parseCount("1,500"))
+        assertEquals(-1L, YouTubeMusicApi.parseCount("no subscribers"))
     }
 
     @Test

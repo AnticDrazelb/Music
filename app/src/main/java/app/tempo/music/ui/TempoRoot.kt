@@ -90,6 +90,9 @@ import app.tempo.music.ui.navigation.Navigator
 import app.tempo.music.ui.navigation.SearchRoute
 import app.tempo.music.ui.navigation.SettingsRoute
 import app.tempo.music.ui.navigation.EqualizerRoute
+import app.tempo.music.ui.navigation.BrowseItemsRoute
+import app.tempo.music.data.model.BrowseRef
+import app.tempo.music.ui.screens.artist.BrowseItemsScreen
 import app.tempo.music.ui.navigation.route
 import app.tempo.music.ui.navigation.Tab
 import app.tempo.music.ui.navigation.TopArtistsRoute
@@ -235,6 +238,10 @@ fun TempoRoot(container: AppContainer, incoming: StateFlow<Intent?>, onIntentHan
                 composable<LibraryRoute> { LibraryScreen() }
                 composable<SettingsRoute> { SettingsScreen() }
                 composable<EqualizerRoute> { EqualizerScreen() }
+                composable<BrowseItemsRoute> { entry ->
+                    val r = entry.toRoute<BrowseItemsRoute>()
+                    BrowseItemsScreen(BrowseRef(r.browseId, r.params, r.title))
+                }
                 composable<ChartRoute> { entry ->
                     val r = entry.toRoute<ChartRoute>()
                     ChartScreen(r.kind, r.country, r.limit)

@@ -140,6 +140,16 @@ class YouTubeUtilsTest {
     }
 
     @Test
+    fun recognisesCreditedArtists() {
+        assertTrue(YouTubeUtils.credits("Drake", "Drake"))
+        assertTrue(YouTubeUtils.credits("Drake & Sexyy Red", "Drake"))
+        assertTrue(YouTubeUtils.credits("DRAKE FT. LOE SHIMMY", "Drake"))
+        assertTrue(YouTubeUtils.credits("21 Savage x Drake", "Drake"))
+        assertFalse(YouTubeUtils.credits("Josh Allen ADMITS Drake Maye OWNS", "Drake"))
+        assertFalse(YouTubeUtils.credits("Drake Bell", "Drake"))
+    }
+
+    @Test
     fun upscalesGoogleImages() {
         assertEquals(
             "https://yt3.googleusercontent.com/abc=w544-h544-l90-rj",

@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Intent
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -213,6 +215,23 @@ open class ScreenshotTest {
         waitForText("Crossfade")
         settleImages(1000)
         snap("14_settings")
+    }
+
+    @Test
+    fun artist() {
+        val app = ApplicationProvider.getApplicationContext<TempoApp>()
+        val top = runBlocking { app.container.charts.artists("us") }.entries.first().artist
+        waitForText("Top Picks")
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText("Top Artists", substring = true))
+        compose.onAllNodesWithText("Top Artists", substring = true).onFirst().performClick()
+        waitForText(top.name)
+        clickText(top.name)
+        waitForText("Top Songs", 60_000)
+        settleImages(5000)
+        snap("16_artist")
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToIndex(9)
+        settleImages(4000)
+        snap("16b_artist_rows")
     }
 
     @Test

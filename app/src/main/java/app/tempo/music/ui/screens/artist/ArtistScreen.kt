@@ -37,11 +37,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tempo.music.AppContainer
 import app.tempo.music.data.model.ArtistDetail
 import app.tempo.music.data.model.ArtistRef
+import app.tempo.music.ui.components.SongCard
+import app.tempo.music.ui.components.ArtistCircle
+import app.tempo.music.data.model.Song
+import app.tempo.music.data.model.MusicItem
+import app.tempo.music.data.model.CollectionRef
 import app.tempo.music.ui.components.Artwork
 import app.tempo.music.ui.components.CircleIconButton
 import app.tempo.music.ui.components.CollectionCard
@@ -180,27 +186,27 @@ fun ArtistScreen(initial: ArtistRef) {
                         itemsIndexed(visible, key = { i, s -> "top-$i-${s.id}" }) { index, song ->
                             SongRow(song, onClick = { player.play(a.topSongs, index) }, onMore = { menu.open(song) })
                         }
-                        if (a.topSongs.size > 5 && !showAllTop) {
+                        if ((a.topSongs.size > 5 && !showAllTop) || a.allSongs != null) {
                             item {
-                                TextButton(onClick = { showAllTop = true }, modifier = Modifier.padding(start = 8.dp)) {
+                                TextButton(
+                                    onClick = { a.allSongs?.let(navigator::collection) ?: run { showAllTop = true } },
+                                    modifier = Modifier.padding(start = 8.dp),
+                                ) {
                                     Text("See All", color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
                     }
-                    if (a.albums.isNotEmpty()) {
-                        item { SectionHeader("Albums") }
-                        item {
-                            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(a.albums, key = { i, ref -> "album-$i-${ref.url}" }) { _, ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
-                            }
+                    a.sections.forEachIndexed { index, section ->
+                        item(key = "section-$index") {
+                            SectionHeader(section.title, onClick = section.more?.let { more -> { navigator.browse(more) } })
                         }
-                    }
-                    if (a.playlists.isNotEmpty()) {
-                        item { SectionHeader("Playlists") }
-                        item {
+                        item(key = "row-$index") {
+                            val songs = section.items.filterIsInstance<Song>()
                             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(a.playlists, key = { i, ref -> "playlist-$i-${ref.url}" }) { _, ref -> CollectionCard(ref, onClick = { navigator.collection(ref) }) }
+                                itemsIndexed(section.items, key = { i, item -> "$index-$i-${item.key}" }) { _, item ->
+                                    MusicItemCard(item, songs)
+                                }
                             }
                         }
                     }
@@ -227,5 +233,24 @@ fun ArtistScreen(initial: ArtistRef) {
                 }
             }
         }
+    }
+}
+
+/** A tile for anything an artist page lists: album, playlist, artist or video. */
+@Composable
+fun MusicItemCard(item: MusicItem, songs: List<Song>, width: Dp = 160.dp) {
+    val navigator = LocalNavigator.current
+    val player = LocalPlayer.current
+    val menu = LocalSongMenu.current
+    when (item) {
+        is CollectionRef -> CollectionCard(item, onClick = { navigator.collection(item) }, width = width)
+        is ArtistRef -> ArtistCircle(item, onClick = { navigator.artist(item) }, size = width * 0.75f)
+        is Song -> SongCard(
+            item,
+            onClick = { player.play(songs, songs.indexOf(item).coerceAtLeast(0)) },
+            onLongClick = { menu.open(item) },
+            width = width,
+        )
+        else -> Unit
     }
 }

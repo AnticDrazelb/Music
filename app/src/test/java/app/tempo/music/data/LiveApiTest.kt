@@ -67,6 +67,8 @@ class LiveApiTest {
         // A user playlist and a radio station, both full of "Artist - Song (Official Video)" uploads.
         check("user playlist", youtube.collection("https://www.youtube.com/playlist?list=PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj").songs)
         check("radio", youtube.radio("dQw4w9WgXcQ"))
+        // An album playlist (OLAK), now read through YouTube Music too.
+        check("album playlist", youtube.collection("https://music.youtube.com/playlist?list=OLAK5uy_kTAuc2ZOu5ihiGDql2Ax8X7zSYEe_z8ns").songs)
     }
 
     @Test
@@ -104,7 +106,7 @@ class LiveApiTest {
         assertTrue(radio.size >= 10)
 
         val artist = youtube.artist("https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw")
-        println("artist ${artist.ref} top=${artist.topSongs.size} albums=${artist.albums.size} playlists=${artist.playlists.size}")
+        println("artist ${artist.ref} top=${artist.topSongs.size} sections=${artist.sections.map { it.title + ":" + it.items.size }}")
         assertTrue(artist.topSongs.isNotEmpty())
 
         val resolver = StreamResolver(youtube) { true }
