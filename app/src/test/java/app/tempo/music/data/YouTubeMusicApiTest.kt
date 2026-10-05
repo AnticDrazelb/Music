@@ -112,6 +112,10 @@ class YouTubeMusicApiTest {
 
     private fun browse(id: String) = """{"browseEndpoint": {"browseId": "$id"}}"""
 
+    private fun watch(id: String, type: String? = null) = """{"watchEndpoint": {"videoId": "$id"${
+        if (type == null) "" else """, "watchEndpointMusicSupportedConfigs": {"watchEndpointMusicConfig": {"musicVideoType": "$type"}}"""
+    }}}"""
+
     private fun carousel(title: String, more: String?, tiles: String) = """
         {"musicCarouselShelfRenderer": {"header": {"musicCarouselShelfBasicHeaderRenderer": {"title": {"runs": [{"text": "$title"
           ${if (more != null) """, "navigationEndpoint": {"browseEndpoint": {"browseId": "UCkooks", "params": "$more"}}""" else ""}}]}}},
@@ -131,7 +135,9 @@ class YouTubeMusicApiTest {
                        "contents": [${listItem("naive", "Naive", run("The Kooks", "MUSIC_PAGE_TYPE_ARTIST", "UCkooks"), "MUSIC_VIDEO_TYPE_ATV",
                            moreColumns = column("612M plays") + column("Inside In / Inside Out", "MPREb_inside"))}]}},
                      ${carousel("Albums", "ggMIegYIARoCAQI%3D", tile("Inside In / Inside Out", "Album • 2006", browse("MPREb_inside")))},
-                     ${carousel("Videos", null, tile("The Kooks - Naive (Official Video)", "The Kooks • 98M views", """{"watchEndpoint": {"videoId": "jkaMiaRLgvY"}}"""))},
+                     ${carousel("Videos", null, tile("The Kooks - Naive (Official Video)", "The Kooks • 98M views", watch("jkaMiaRLgvY", "MUSIC_VIDEO_TYPE_OMV")) + "," + tile("Naive (Lyrics)", "The Kooks • 2M views", watch("lyrics1")))},
+                     ${carousel("Live performances", null, tile("Naive (Live at Glastonbury)", "The Kooks • 3M views", watch("glasto1", "MUSIC_VIDEO_TYPE_UGC")) + "," + tile("Naive (Live)", "The Kooks", watch("liveatv", "MUSIC_VIDEO_TYPE_ATV")))},
+                     ${carousel("Music videos", null, tile("Shine On", "The Kooks", watch("shineatv", "MUSIC_VIDEO_TYPE_ATV")))},
                      ${carousel("Fans might also like", null, tile("Arctic Monkeys", "8.1M subscribers", browse("UCarctic")) + "," + tile("Empty", "", "{}"))},
                      ${carousel("Featured on", null, tile("Indie Anthems", "Playlist", browse("VLRDCLAK5uy_indie")))}
                    ]}}}""",
@@ -146,13 +152,16 @@ class YouTubeMusicApiTest {
         // The album column is the one linking to an album, not the play count before it.
         assertEquals("Inside In / Inside Out", page.songs.single().album)
 
-        assertEquals(listOf("Albums", "Videos", "Fans might also like", "Featured on"), page.sections.map { it.title })
+        // No music videos (Tempo leaves them out): video rows go, and video tiles are dropped
+        // from other rows, while audio tracks (ATV) stay.
+        assertEquals(listOf("Albums", "Live performances", "Fans might also like", "Featured on"), page.sections.map { it.title })
         val album = page.sections[0].items.single() as app.tempo.music.data.model.CollectionRef
         assertEquals("https://music.youtube.com/browse/MPREb_inside", album.url)
         assertEquals(app.tempo.music.data.model.CollectionType.ALBUM, album.type)
         assertEquals(YouTubeMusicApi.BrowseTarget("UCkooks", "ggMIegYIARoCAQI%3D"), page.sections[0].more)
-        val video = page.sections[1].items.single() as app.tempo.music.data.model.Song
-        assertEquals("Naive" to "The Kooks", video.title to video.artist)
+        val live = page.sections[1].items.single() as app.tempo.music.data.model.Song
+        assertEquals("liveatv", live.id)
+        assertEquals(false, live.isVideo)
         val similar = page.sections[2].items.single() as app.tempo.music.data.model.ArtistRef
         assertEquals("https://www.youtube.com/channel/UCarctic", similar.url)
         assertEquals(8_100_000L, similar.subscribers)
@@ -194,10 +203,12 @@ class YouTubeMusicApiTest {
                 """{"contents": {"gridRenderer": {"items": [
                     ${tile("Inside In / Inside Out", "2006", browse("MPREb_inside"))},
                     ${tile("Konk", "2008", browse("MPREb_konk"))},
-                    ${tile("Konk", "2008", browse("MPREb_konk"))}
+                    ${tile("Konk", "2008", browse("MPREb_konk"))},
+                    ${tile("Naive (Official Video)", "The Kooks • 98M views", watch("jkaMiaRLgvY", "MUSIC_VIDEO_TYPE_OMV"))}
                   ]}}}""",
             ),
         )
+        // Videos are left out of See All pages too.
         assertEquals(listOf("Inside In / Inside Out", "Konk"), items.map { (it as app.tempo.music.data.model.CollectionRef).title })
     }
 

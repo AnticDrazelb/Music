@@ -153,6 +153,8 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
             val sections = findAll(root, "musicCarouselShelfRenderer").mapNotNull { carousel ->
                 val titleRun = carousel.path("header", "musicCarouselShelfBasicHeaderRenderer", "title", "runs").arr?.firstOrNull()
                 val title = titleRun.path("text").str?.trim().orEmpty()
+                // Tempo has no music videos, so their rows are left out.
+                if (videoRow.matches(title)) return@mapNotNull null
                 val items = carousel["contents"].arr.orEmpty().mapNotNull { parseCarouselItem(it.jsonObj) }
                     .distinctBy { it.key }
                 if (title.isEmpty() || items.isEmpty()) null else Section(title, items, browseTarget(titleRun.path("navigationEndpoint")))
@@ -202,7 +204,9 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
                 .mapNotNull { parseCarouselItem(it, wrapped = false) }
                 .distinctBy { it.key }
 
-        /** A carousel tile: an album, single, playlist, artist or video. */
+        private val videoRow = Regex("""(?i)(music )?videos""")
+
+        /** A carousel tile: an album, single, playlist, artist or song. Videos are left out. */
         private fun parseCarouselItem(element: JsonObject?, wrapped: Boolean = true): MusicItem? {
             val item = if (wrapped) {
                 element?.get("musicTwoRowItemRenderer").jsonObj ?: element?.get("musicResponsiveListItemRenderer").jsonObj?.let {
@@ -241,11 +245,12 @@ class YouTubeMusicApi(private val client: OkHttpClient) {
                     subtitle = subtitle,
                     thumbnailUrl = thumbnail,
                 )
-                videoId != null -> {
-                    // A video tile: "Never Gonna Give You Up" over "Rick Astley • 1.8B views".
+                // Only audio tracks: video tiles (official videos, live clips, uploads) are dropped.
+                videoId != null && videoType(item) == ATV -> {
+                    // "Naive (Live)" over "The Kooks • 3M plays".
                     val channel = subtitle?.substringBefore(SEPARATOR)?.trim()
                     val (songTitle, artist) = YouTubeUtils.splitTitle(title, channel, artistIsReliable = true)
-                    Song(id = videoId, title = songTitle, artist = artist, thumbnailUrl = thumbnail, isVideo = true)
+                    Song(id = videoId, title = songTitle, artist = artist, thumbnailUrl = thumbnail)
                 }
                 else -> null
             }

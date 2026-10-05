@@ -59,7 +59,7 @@ data class ArtistDetail(
     val bannerUrl: String?,
     val description: String?,
     val topSongs: List<Song>,
-    /** Rows after Top Songs, in YouTube Music's order: albums, singles, videos, similar artists... */
+    /** Rows after Top Songs, in YouTube Music's order: albums, singles, similar artists... (never videos) */
     val sections: List<ArtistSection>,
     /** Every song by the artist, behind Top Songs' "See All". */
     val allSongs: CollectionRef? = null,

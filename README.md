@@ -72,7 +72,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.6.1.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.6.2.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
