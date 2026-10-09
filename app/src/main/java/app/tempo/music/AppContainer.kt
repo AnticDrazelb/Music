@@ -73,6 +73,14 @@ class AppContainer(context: Context) {
 
     val mixes = MixRepository(library, youtube::radio, File(appContext.filesDir, "mixes"))
 
+    /** Where song audio is read from: the download, the audio cache, or YouTube. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    val audioSource: androidx.media3.datasource.DataSource.Factory by lazy {
+        app.tempo.music.playback.YouTubeDataSource.factory(httpClient, streamResolver, mediaCache, downloads::fileFor)
+    }
+
+    val lyricsSync = app.tempo.music.data.lyrics.LyricsSync(appContext)
+
     /** Audio cache shared by the playback service (SimpleCache must be a singleton per folder). */
     val mediaCache: SimpleCache by lazy {
         SimpleCache(

@@ -20,7 +20,8 @@ data class LyricLine(val timeMs: Long, val text: String, val words: List<LyricWo
 
 sealed interface Lyrics {
     /** Time-stamped lines, for karaoke-style highlighting. */
-    data class Synced(val lines: List<LyricLine>) : Lyrics
+    /** [durationSec] is the length of the recording the times belong to, when known. */
+    data class Synced(val lines: List<LyricLine>, val durationSec: Double? = null) : Lyrics
     data class Plain(val text: String) : Lyrics
     data object Instrumental : Lyrics
     data object NotFound : Lyrics
@@ -51,7 +52,12 @@ class LyricsRepository(
     )
 
     @Serializable
-    private data class Cached(val synced: String? = null, val plain: String? = null, val instrumental: Boolean = false)
+    private data class Cached(
+        val synced: String? = null,
+        val plain: String? = null,
+        val instrumental: Boolean = false,
+        val durationSec: Double? = null,
+    )
 
     /** [durationSec] helps pick the right version when several exist; pass <= 0 if unknown. */
     suspend fun lyrics(song: Song, durationSec: Long): Lyrics = withContext(Dispatchers.IO) {
@@ -115,7 +121,7 @@ class LyricsRepository(
         val best = candidates.maxByOrNull(::score)?.takeIf { score(it) > Int.MIN_VALUE } ?: return Lyrics.NotFound
         val synced = best.syncedLyrics?.let(::parseLrc).orEmpty()
         return when {
-            synced.count { it.text.isNotBlank() } >= 5 -> Lyrics.Synced(synced)
+            synced.count { it.text.isNotBlank() } >= 5 -> Lyrics.Synced(synced, best.duration)
             !best.plainLyrics.isNullOrBlank() -> Lyrics.Plain(best.plainLyrics.trim())
             best.instrumental -> Lyrics.Instrumental
             else -> Lyrics.NotFound
@@ -131,7 +137,7 @@ class LyricsRepository(
         if (!file.exists()) return null
         val cached = json.decodeFromString<Cached>(file.readText())
         when {
-            cached.synced != null -> Lyrics.Synced(parseLrc(cached.synced))
+            cached.synced != null -> Lyrics.Synced(parseLrc(cached.synced), cached.durationSec)
             cached.plain != null -> Lyrics.Plain(cached.plain)
             cached.instrumental -> Lyrics.Instrumental
             else -> null
@@ -142,7 +148,10 @@ class LyricsRepository(
         runCatching {
             cacheDir.mkdirs()
             val cached = when (result) {
-                is Lyrics.Synced -> Cached(synced = result.lines.joinToString("\n", transform = ::formatLine))
+                is Lyrics.Synced -> Cached(
+                    synced = result.lines.joinToString("\n", transform = ::formatLine),
+                    durationSec = result.durationSec,
+                )
                 is Lyrics.Plain -> Cached(plain = result.text)
                 Lyrics.Instrumental -> Cached(instrumental = true)
                 Lyrics.NotFound -> return

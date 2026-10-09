@@ -52,7 +52,11 @@ An Apple Music–style music player for Android that streams from YouTube.
   the filters actually do. It processes the audio inside the player, so it works the same on
   every phone. Settings → Playback → Equalizer, or ⋯ on Now Playing.
 - **Lyrics**: time-synced lyrics that follow the song, with the current line highlighted.
-  Tap a line to jump to it. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
+  Tap a line to jump to it. Lyrics are usually timed to the album version, so when the
+  audio is a different recording (a music video with a longer intro, a radio edit) Tempo
+  listens to the first minutes of the song, finds where the singing really is, and moves the
+  lyrics to match. If they're still off, Earlier / Later below the lyrics moves them in
+  half-second steps, remembered for that song. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
   the device after the first view, so they also show offline. Instrumental breaks show
   Apple Music's three dots, which light up as the break goes on.
 - **Karaoke**: like Apple Music Sing. Tap the microphone on Now Playing to turn the lead
@@ -93,7 +97,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.8.1.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.8.2.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
@@ -128,7 +132,7 @@ sign an APK that Android will accept as an update to Tempo.
 | Storage | Room for playlists, favourites, history and the download queue. DataStore for settings. |
 | Crossfade | `playback/Crossfader.kt`. ExoPlayer plays one song at a time, so a second, hidden player loads the last seconds of the current song in advance. When the main player reaches the fade point (a position-triggered `PlayerMessage`), it moves on to the next song while the hidden player finishes the old one, and their volumes follow equal-power (sin/cos) curves. |
 | Equalizer | `playback/eq/`. An ExoPlayer `AudioProcessor` in each player's audio sink runs ten peaking biquads (RBJ cookbook) in double precision on the decoded PCM. The level is lowered by the curve's peak boost and a peak limiter catches the rest, so boosts never clip. A flat curve passes audio through bit for bit. |
-| Karaoke | `playback/karaoke/`. Another `AudioProcessor`, ahead of the equaliser. Lead vocals are mixed dead centre, so it takes a short-time Fourier transform of both channels (2048-sample frames, 75% overlap) and turns down each frequency bin by how alike the left and right channels are there, only between 100 Hz and 14 kHz so the bass and kick drum stay. Panned instruments are left alone. The audio is always 43 ms late, so karaoke can be switched on mid-song without a jump; at full vocals the transform is skipped and the samples pass through unchanged. Word timing for lyrics is in `data/lyrics/LyricsTiming.kt`. |
+| Karaoke | `playback/karaoke/`. Another `AudioProcessor`, ahead of the equaliser. Lead vocals are mixed dead centre, so it takes a short-time Fourier transform of both channels (2048-sample frames, 75% overlap) and turns down each frequency bin by how alike the left and right channels are there, only between 100 Hz and 14 kHz so the bass and kick drum stay. Panned instruments are left alone. The audio is always 43 ms late, so karaoke can be switched on mid-song without a jump; at full vocals the transform is skipped and the samples pass through unchanged. Word timing for lyrics is in `data/lyrics/LyricsTiming.kt`. To line lyrics up with a different recording, `SongAudio` decodes the first 150 s with Android's own decoders, `VocalActivity` measures the centred voice-range energy every 100 ms, and `LyricsAligner` picks the shift (up to ±20 s) whose sung/silent pattern correlates best with it, preferring the length difference between the recordings and changing nothing unless the match is clear. |
 | Casting | `playback/cast/`. Media3's `CastPlayer` wraps the ExoPlayer and hands the queue to Google's Default Media Receiver when a Cast route is picked, and back when it ends. YouTube's audio needs the exact requests `StreamRequests` makes, which a TV can't send, so `CastStreamServer` (a small HTTP server on the phone, with Range support and a random key in every URL) serves each song to the TV through the player's own data source: the download, the cache or YouTube. The Play On sheet uses AndroidX MediaRouter for Cast devices and Android's system output switcher for Bluetooth. |
 | Downloads | `data/download/`. Chunked, resumable range requests in a foreground service. Files are kept in the app's private music folder. |
 

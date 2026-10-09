@@ -55,6 +55,15 @@ import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalAppContainer
 import app.tempo.music.ui.navigation.LocalPlayer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.job
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.Row
+import androidx.compose.runtime.rememberUpdatedState
+import app.tempo.music.data.lyrics.LyricsAligner
+import app.tempo.music.playback.karaoke.SongAudio
+import app.tempo.music.playback.karaoke.VocalActivity
+import kotlin.math.abs
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.withFrameMillis
@@ -99,7 +108,7 @@ fun LyricsPanel(song: Song, state: PlayerUiState, modifier: Modifier = Modifier)
                 TextButton(onClick = { attempt++ }) { Text("Try Again", color = Color.White, fontWeight = FontWeight.SemiBold) }
             }
             is Load.Ready -> when (val lyrics = r.data) {
-                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, state, durationSec * 1000, karaoke)
+                is Lyrics.Synced -> SyncedLyrics(song.id, lyrics, state, durationSec * 1000, karaoke)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text)
                 Lyrics.Instrumental -> Message("Instrumental", "This song has no lyrics.", Modifier.align(Alignment.Center))
                 Lyrics.NotFound -> Message(
@@ -113,8 +122,11 @@ fun LyricsPanel(song: Song, state: PlayerUiState, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs: Long, wordByWord: Boolean) {
+private fun SyncedLyrics(songId: String, lyrics: Lyrics.Synced, state: PlayerUiState, songEndMs: Long, wordByWord: Boolean) {
+    val lines = lyrics.lines
     val player = LocalPlayer.current
+    val container = LocalAppContainer.current
+    val sync = container.lyricsSync
     val listState = rememberLazyListState()
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     var lastUserScroll by remember { mutableLongStateOf(0L) }
@@ -130,8 +142,35 @@ private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs
             }
         }
     }
-    // Read only while drawing, so following the song every frame redraws without recomposing.
-    val positionNow = remember { { position } }
+
+    // Lyrics are usually timed to the album version; the audio playing may be another recording
+    // (a music video with a longer intro, say). Shift them to match it: automatically, from the
+    // audio, plus whatever the listener adds.
+    var automatic by remember(songId) { mutableStateOf(sync.automatic(songId)) }
+    var manual by remember(songId) { mutableLongStateOf(sync.manual(songId)) }
+    var matching by remember(songId) { mutableStateOf(false) }
+    val offset = (automatic ?: 0L) + manual
+    val offsetNow by rememberUpdatedState(offset)
+    LaunchedEffect(songId, entries) {
+        if (automatic != null) return@LaunchedEffect
+        matching = true
+        val job = coroutineContext.job
+        val found = withContext(Dispatchers.IO) {
+            val activity = SongAudio.vocalActivity(container.audioSource, songId, keepGoing = { job.isActive })
+                ?: return@withContext null
+            val hint = lyrics.durationSec?.takeIf { songEndMs > 0 }?.let { songEndMs - (it * 1000).toLong() }
+            runCatching { LyricsAligner.offsetMs(entries, activity.activity(), VocalActivity.STEP_MS, hint) }.getOrNull()
+        }
+        matching = false
+        if (found != null) {
+            automatic = found
+            sync.setAutomatic(songId, found)
+        }
+    }
+
+    // Where the song is in the lyrics' own timeline. Read only while drawing, so following the
+    // song every frame redraws without recomposing.
+    val positionNow = remember { { position - offsetNow } }
 
     LaunchedEffect(state.current?.id, state.isPlaying) {
         while (true) {
@@ -147,7 +186,7 @@ private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs
 
     // Show a line slightly before it's sung, like Apple Music.
     val current by remember(entries) {
-        derivedStateOf { entries.indexOfLast { it.startMs <= position + 250 } }
+        derivedStateOf { entries.indexOfLast { it.startMs <= position - offsetNow + 250 } }
     }
     LaunchedEffect(current) {
         val userScrolledRecently = System.currentTimeMillis() - lastUserScroll < 3500
@@ -191,7 +230,7 @@ private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs
                             }
                             .clickable {
                                 lastUserScroll = 0L
-                                player.seekTo(entry.startMs)
+                                player.seekTo((entry.startMs + offset).coerceAtLeast(0))
                                 if (!state.playWhenReady) player.togglePlayPause()
                             }
                             .padding(vertical = 8.dp),

@@ -75,12 +75,7 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         queueStore = QueueStore(this)
 
-        val dataSourceFactory = YouTubeDataSource.factory(
-            container.httpClient,
-            container.streamResolver,
-            container.mediaCache,
-            container.downloads::fileFor,
-        )
+        val dataSourceFactory = container.audioSource
         val music = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
