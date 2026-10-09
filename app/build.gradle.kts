@@ -24,8 +24,8 @@ android {
         applicationId = "app.tempo.music"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.8.2"
+        versionCode = 14
+        versionName = "1.9.0"
     }
 
     signingConfigs {

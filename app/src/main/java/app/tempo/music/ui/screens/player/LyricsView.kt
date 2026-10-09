@@ -146,9 +146,9 @@ private fun SyncedLyrics(songId: String, lyrics: Lyrics.Synced, state: PlayerUiS
     // Lyrics are usually timed to the album version; the audio playing may be another recording
     // (a music video with a longer intro, say). Shift them to match it: automatically, from the
     // audio, plus whatever the listener adds.
-    var automatic by remember(songId) { mutableStateOf(sync.automatic(songId)) }
+    var automatic by remember(songId, lyrics) { mutableStateOf(if (lyrics.matchesRecording) 0L else sync.automatic(songId)) }
     var manual by remember(songId) { mutableLongStateOf(sync.manual(songId)) }
-    var matching by remember(songId) { mutableStateOf(false) }
+    var matching by remember(songId, lyrics) { mutableStateOf(false) }
     val offset = (automatic ?: 0L) + manual
     val offsetNow by rememberUpdatedState(offset)
     LaunchedEffect(songId, entries) {
@@ -238,7 +238,7 @@ private fun SyncedLyrics(songId: String, lyrics: Lyrics.Synced, state: PlayerUiS
                 }
             }
         }
-        item { Credit() }
+        item { Credit(lyrics.source) }
     }
 }
 
@@ -256,18 +256,44 @@ internal fun LyricLineText(
     position: () -> Long,
     modifier: Modifier = Modifier,
 ) {
+    Column(modifier) {
+        WipedText(entry, active, wordByWord, alpha, position, small = false)
+        if (entry.background.isNotEmpty()) {
+            // Backing vocals, smaller and underneath, like Apple Music.
+            val background = remember(entry) {
+                val text = entry.background.joinToString("") { it.text }
+                LyricEntry.Line(text, entry.background, entry.background.first().startMs, entry.background.last().endMs, true, alignEnd = entry.alignEnd)
+            }
+            WipedText(background, active, wordByWord, alpha * 0.8f, position, small = true, Modifier.padding(top = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun WipedText(
+    entry: LyricEntry.Line,
+    active: Boolean,
+    wordByWord: Boolean,
+    alpha: Float,
+    position: () -> Long,
+    small: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val highlight by animateFloatAsState(if (active && wordByWord) 1f else 0f, label = "highlight")
+    val align = if (entry.alignEnd) TextAlign.End else TextAlign.Start
     if (highlight == 0f) {
-        LyricText(entry.text, Color.White.copy(alpha = alpha), modifier)
+        LyricText(entry.text, Color.White.copy(alpha = alpha), small, align, modifier.fillMaxWidth())
         return
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    val edge = with(LocalDensity.current) { 18.dp.toPx() }
-    Box(modifier) {
-        LyricText(entry.text, Color.White.copy(alpha = 0.45f), Modifier.fillMaxWidth(), onTextLayout = { layout = it })
+    val edge = with(LocalDensity.current) { (if (small) 12.dp else 18.dp).toPx() }
+    Box(modifier.fillMaxWidth()) {
+        LyricText(entry.text, Color.White.copy(alpha = 0.45f), small, align, Modifier.fillMaxWidth(), onTextLayout = { layout = it })
         LyricText(
             entry.text,
             Color.White.copy(alpha = highlight),
+            small,
+            align,
             Modifier
                 .fillMaxWidth()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -283,13 +309,21 @@ internal fun LyricLineText(
 }
 
 @Composable
-private fun LyricText(text: String, color: Color, modifier: Modifier = Modifier, onTextLayout: (TextLayoutResult) -> Unit = {}) {
+private fun LyricText(
+    text: String,
+    color: Color,
+    small: Boolean,
+    align: TextAlign,
+    modifier: Modifier = Modifier,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
+) {
     Text(
         text,
         color = color,
-        fontSize = 27.sp,
-        lineHeight = 33.sp,
-        fontWeight = FontWeight.Bold,
+        fontSize = if (small) 19.sp else 27.sp,
+        lineHeight = if (small) 24.sp else 33.sp,
+        fontWeight = if (small) FontWeight.SemiBold else FontWeight.Bold,
+        textAlign = align,
         onTextLayout = onTextLayout,
         modifier = modifier,
     )
@@ -384,9 +418,12 @@ private fun PlainLyrics(text: String) {
 }
 
 @Composable
-private fun Credit() {
+private fun Credit(source: String = Lyrics.LRCLIB) {
     Text(
-        "Lyrics from LRCLIB",
+        when (source) {
+            Lyrics.YOUTUBE -> "Lyrics from the video's captions"
+            else -> "Lyrics from $source"
+        },
         color = White55,
         fontSize = 12.sp,
         modifier = Modifier.padding(top = 24.dp),

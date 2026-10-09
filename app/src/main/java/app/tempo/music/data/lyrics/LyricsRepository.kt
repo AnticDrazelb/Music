@@ -14,27 +14,59 @@ import kotlin.math.abs
 
 /**
  * One line of synced lyrics. [words] is filled only when the lyrics give each word its own time
- * (enhanced LRC); their texts joined together are exactly [text].
+ * (word-timed TTML or enhanced LRC); their texts joined together are exactly [text].
+ * [background] is backing vocals, and [alignEnd] marks a duet's second singer.
  */
-data class LyricLine(val timeMs: Long, val text: String, val words: List<LyricWord> = emptyList())
+@Serializable
+data class LyricLine(
+    val timeMs: Long,
+    val text: String,
+    val words: List<LyricWord> = emptyList(),
+    val background: List<LyricWord> = emptyList(),
+    val alignEnd: Boolean = false,
+)
 
 sealed interface Lyrics {
-    /** Time-stamped lines, for karaoke-style highlighting. */
-    /** [durationSec] is the length of the recording the times belong to, when known. */
-    data class Synced(val lines: List<LyricLine>, val durationSec: Double? = null) : Lyrics
+    /**
+     * Time-stamped lines. [durationSec] is the length of the recording the times belong to,
+     * when known; [matchesRecording] means they were timed to the very video playing, so they
+     * need no lining up. [source] names where they came from, for the credit.
+     */
+    data class Synced(
+        val lines: List<LyricLine>,
+        val durationSec: Double? = null,
+        val source: String = LRCLIB,
+        val matchesRecording: Boolean = false,
+    ) : Lyrics
     data class Plain(val text: String) : Lyrics
     data object Instrumental : Lyrics
     data object NotFound : Lyrics
+
+    companion object {
+        const val LRCLIB = "LRCLIB"
+        const val UNISON = "Unison"
+        const val YOUTUBE = "YouTube captions"
+    }
 }
 
 /**
- * Lyrics from LRCLIB (lrclib.net), a free, open lyrics database with time-synced lyrics.
+ * Finds lyrics, best first:
+ *
+ * 1. Unison (unison.boidu.dev), Better Lyrics' crowdsourced database, for this exact YouTube
+ *    video: timed to the recording playing, often word by word in Apple Music's TTML format.
+ * 2. Unison for the song by title, artist and length, when it's timed word by word.
+ * 3. The video's own lyric captions, written by a person (never automatic ones), which are
+ *    timed to this exact video.
+ * 4. LRCLIB (lrclib.net), the largest open database of synced lyrics, timed line by line.
+ *
  * Results are cached on disk so lyrics also work offline for songs you've seen before.
  */
 class LyricsRepository(
     private val client: OkHttpClient,
     private val cacheDir: File,
     private val userAgent: String,
+    /** The video's caption tracks; empty if it has none or they can't be loaded. */
+    private val captions: (videoId: String) -> List<CaptionTrack> = { emptyList() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val memory = object : LinkedHashMap<String, Lyrics>(32, 0.75f, true) {
@@ -53,30 +85,133 @@ class LyricsRepository(
 
     @Serializable
     private data class Cached(
+        /** Lines saved by versions before 1.9, as LRC. */
         val synced: String? = null,
+        val lines: List<LyricLine>? = null,
         val plain: String? = null,
         val instrumental: Boolean = false,
         val durationSec: Double? = null,
+        val source: String? = null,
+        val matchesRecording: Boolean = false,
     )
 
     /** [durationSec] helps pick the right version when several exist; pass <= 0 if unknown. */
     suspend fun lyrics(song: Song, durationSec: Long): Lyrics = withContext(Dispatchers.IO) {
         synchronized(memory) { memory[song.id] }?.let { return@withContext it }
-        readCache(song.id)?.let { cached ->
+        val (cached, stale) = readCache(song.id) ?: (null to false)
+        if (cached != null && !stale) {
             synchronized(memory) { memory[song.id] = cached }
             return@withContext cached
         }
+        // Saved by an older version, before the better sources: look again, but keep what we
+        // have if that fails (offline, say).
+        if (cached != null) {
+            val fresh = runCatching { find(song, durationSec) }.getOrNull()?.takeIf { it != Lyrics.NotFound } ?: cached
+            synchronized(memory) { memory[song.id] = fresh }
+            if (fresh !== cached) writeCache(song.id, fresh)
+            return@withContext fresh
+        }
 
-        val title = cleanTitle(song.title)
-        val artist = primaryArtist(song.artist)
-        val candidates = search(mapOf("track_name" to title, "artist_name" to artist))
-            .ifEmpty { search(mapOf("q" to "$title $artist")) }
-        val result = choose(candidates, title, artist, durationSec)
-
+        val result = find(song, durationSec)
         synchronized(memory) { memory[song.id] = result }
         if (result != Lyrics.NotFound) writeCache(song.id, result)
         result
     }
+
+    private fun find(song: Song, durationSec: Long): Lyrics {
+
+        val title = cleanTitle(song.title)
+        val artist = primaryArtist(song.artist)
+        val result = unison(mapOf("v" to song.id))?.let { it.copy(matchesRecording = true) }
+            ?: unison(unisonQuery(title, artist, durationSec))?.takeIf { synced -> synced.lines.any { it.words.isNotEmpty() } }
+            ?: run {
+                val candidates = search(mapOf("track_name" to title, "artist_name" to artist))
+                    .ifEmpty { search(mapOf("q" to "$title $artist")) }
+                val lrclib = choose(candidates, title, artist, durationSec)
+                fromCaptions(song.id, lrclib) ?: lrclib
+            }
+        return result
+    }
+
+    // ---------------------------------------------------------------- Unison
+
+    @Serializable
+    private data class UnisonResponse(val success: Boolean = false, val data: UnisonLyrics? = null)
+
+    @Serializable
+    private data class UnisonLyrics(
+        val videoId: String? = null,
+        val duration: Double? = null,
+        val format: String? = null,
+        val syncType: String? = null,
+        val lyrics: String? = null,
+        val hidden: Boolean = false,
+    )
+
+    private fun unisonQuery(title: String, artist: String, durationSec: Long) = buildMap {
+        put("song", title)
+        put("artist", artist)
+        if (durationSec > 0) put("duration", durationSec.toString())
+    }
+
+    /** Synced lyrics from Unison, or null if it has none (or can't be reached). */
+    private fun unison(params: Map<String, String>): Lyrics.Synced? = runCatching {
+        val url = "https://unison.boidu.dev/lyrics".toHttpUrl().newBuilder().apply {
+            params.forEach { (k, v) -> addQueryParameter(k, v) }
+        }.build()
+        val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
+        val data = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            json.decodeFromString<UnisonResponse>(response.body.string()).data
+        } ?: return null
+        if (data.hidden || data.syncType == "plain") return null
+        val text = data.lyrics ?: return null
+        val lines = when (data.format) {
+            "ttml" -> Ttml.parse(text)
+            "lrc" -> parseLrc(text)
+            else -> return null
+        }
+        // Skip junk and test entries.
+        if (lines.count { it.text.isNotBlank() } < 5) return null
+        Lyrics.Synced(lines, data.duration, Lyrics.UNISON, matchesRecording = data.videoId == params["v"] && data.videoId != null)
+    }.getOrNull()
+
+    // ---------------------------------------------------------------- YouTube captions
+
+    /**
+     * The video's lyric captions, if it has some written by a person in the song's language.
+     * When LRCLIB found lyrics, the captions must say mostly the same words (so translations
+     * and unrelated subtitles are skipped).
+     */
+    private fun fromCaptions(videoId: String, lrclib: Lyrics): Lyrics.Synced? = runCatching {
+        val tracks = captions(videoId).filter { !it.autoGenerated }
+        if (tracks.isEmpty()) return null
+        val reference = when (lrclib) {
+            is Lyrics.Synced -> lrclib.lines.joinToString(" ") { it.text }
+            is Lyrics.Plain -> lrclib.text
+            else -> null
+        }
+        val candidates = tracks.mapNotNull { track ->
+            val lines = Captions.parseJson3(fetchText(Captions.json3Url(track.url)) ?: return@mapNotNull null)
+            if (lines.count { it.text.isNotBlank() } < 8) null else track to lines
+        }
+        val best = if (reference != null) {
+            candidates.map { (track, lines) -> Triple(track, lines, Captions.overlap(lines, reference)) }
+                .filter { it.third >= 0.5 }.maxByOrNull { it.third }?.let { it.first to it.second }
+        } else {
+            candidates.singleOrNull()
+        } ?: return null
+        Lyrics.Synced(best.second, source = Lyrics.YOUTUBE, matchesRecording = true)
+    }.getOrNull()
+
+    private fun fetchText(url: String): String? {
+        val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
+        client.newCall(request).execute().use { response ->
+            return if (response.isSuccessful) response.body.string() else null
+        }
+    }
+
+    // ---------------------------------------------------------------- LRCLIB
 
     private fun search(params: Map<String, String>): List<Candidate> {
         val url = "https://lrclib.net/api/search".toHttpUrl().newBuilder().apply {
@@ -132,16 +267,20 @@ class LyricsRepository(
 
     private fun cacheFile(id: String) = File(cacheDir, "$id.json")
 
-    private fun readCache(id: String): Lyrics? = runCatching {
+    /** The saved lyrics, and whether they were saved in the old format (before 1.9). */
+    private fun readCache(id: String): Pair<Lyrics, Boolean>? = runCatching {
         val file = cacheFile(id)
         if (!file.exists()) return null
         val cached = json.decodeFromString<Cached>(file.readText())
-        when {
+        val stale = cached.source == null
+        val lyrics = when {
+            cached.lines != null -> Lyrics.Synced(cached.lines, cached.durationSec, cached.source ?: Lyrics.LRCLIB, cached.matchesRecording)
             cached.synced != null -> Lyrics.Synced(parseLrc(cached.synced), cached.durationSec)
             cached.plain != null -> Lyrics.Plain(cached.plain)
             cached.instrumental -> Lyrics.Instrumental
             else -> null
-        }
+        } ?: return null
+        lyrics to stale
     }.getOrNull()
 
     private fun writeCache(id: String, result: Lyrics) {
@@ -149,11 +288,13 @@ class LyricsRepository(
             cacheDir.mkdirs()
             val cached = when (result) {
                 is Lyrics.Synced -> Cached(
-                    synced = result.lines.joinToString("\n", transform = ::formatLine),
+                    lines = result.lines,
                     durationSec = result.durationSec,
+                    source = result.source,
+                    matchesRecording = result.matchesRecording,
                 )
-                is Lyrics.Plain -> Cached(plain = result.text)
-                Lyrics.Instrumental -> Cached(instrumental = true)
+                is Lyrics.Plain -> Cached(plain = result.text, source = Lyrics.LRCLIB)
+                Lyrics.Instrumental -> Cached(instrumental = true, source = Lyrics.LRCLIB)
                 Lyrics.NotFound -> return
             }
             cacheFile(id).writeText(json.encodeToString(Cached.serializer(), cached))
@@ -217,17 +358,6 @@ class LyricsRepository(
             }
             return min.toLong() * 60_000 + sec.toLong() * 1000 + fracMs
         }
-
-        private fun formatLine(line: LyricLine): String {
-            if (line.words.isEmpty()) return "[${formatTag(line.timeMs)}]${line.text}"
-            return buildString {
-                append("[${formatTag(line.timeMs)}]")
-                line.words.forEach { append("<${formatTag(it.startMs)}>${it.text}") }
-                line.words.last().endMs.takeIf { it >= 0 }?.let { append("<${formatTag(it)}>") }
-            }
-        }
-
-        private fun formatTag(ms: Long) = "%02d:%02d.%02d".format(ms / 60_000, (ms / 1000) % 60, (ms % 1000) / 10)
 
         private val noise = Regex("""\s*[(\[](?:feat\.?|ft\.?|with|from|official|lyrics?|audio|video|remaster|live|explicit)[^)\]]*[)\]]""", RegexOption.IGNORE_CASE)
 

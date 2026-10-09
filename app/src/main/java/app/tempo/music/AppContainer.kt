@@ -48,11 +48,14 @@ class AppContainer(context: Context) {
     val library = LibraryRepository(database)
     val youtube = YouTubeRepository(httpClient)
     val charts = ChartsRepository(httpClient, File(appContext.filesDir, "charts"))
-    val lyrics = LyricsRepository(
-        httpClient,
-        File(appContext.filesDir, "lyrics"),
-        userAgent = "Tempo/${BuildConfig.VERSION_NAME} (Android music player)",
-    )
+    val lyrics by lazy {
+        LyricsRepository(
+            httpClient,
+            File(appContext.filesDir, "lyrics"),
+            userAgent = "Tempo/${BuildConfig.VERSION_NAME} (Android music player)",
+            captions = streamResolver::captions,
+        )
+    }
 
     val equalizer = EqualizerController(settings, appScope)
 

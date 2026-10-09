@@ -52,15 +52,25 @@ An Apple Music–style music player for Android that streams from YouTube.
   the filters actually do. It processes the audio inside the player, so it works the same on
   every phone. Settings → Playback → Equalizer, or ⋯ on Now Playing.
 - **Lyrics**: time-synced lyrics that follow the song, with the current line highlighted.
-  Tap a line to jump to it. Lyrics are usually timed to the album version, so when the
-  audio is a different recording (a music video with a longer intro, a radio edit) Tempo
-  listens to the first minutes of the song, finds where the singing really is, and moves the
-  lyrics to match. If they're still off, Earlier / Later below the lyrics moves them in
-  half-second steps, remembered for that song. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
-  the device after the first view, so they also show offline. Instrumental breaks show
-  Apple Music's three dots, which light up as the break goes on.
+  Tap a line to jump to it. Tempo looks in the best place first:
+  1. [Unison](https://unison.boidu.dev), Better Lyrics' crowdsourced database, for this exact
+     YouTube video. These are timed to the very recording playing, usually word by word in
+     Apple Music's format, with backing vocals shown smaller underneath and a duet's second
+     singer on the right.
+  2. Unison for the song by title, artist and length, when timed word by word.
+  3. The video's own lyric captions, if a person wrote them (automatic captions are never
+     used) and they match the song's words. They're timed to this exact video.
+  4. [LRCLIB](https://lrclib.net), the largest open synced-lyrics database, line by line.
+
+  Lyrics that weren't timed to this recording (a music video with a longer intro, a radio
+  edit) are lined up with it automatically: Tempo listens to the first minutes of the song,
+  finds where the singing really is, and moves the lyrics to match. If they're still off,
+  Earlier / Later below the lyrics moves them in half-second steps, remembered for that song.
+  Instrumental breaks show Apple Music's three dots. Lyrics are saved on the device after the
+  first view, so they also show offline. The credit under the lyrics names the source.
 - **Karaoke**: like Apple Music Sing. Tap the microphone on Now Playing to turn the lead
-  vocal down and sing along. The lyrics fill in word by word as each word is sung, and a
+  vocal down and sing along. The lyrics fill in word by word as each word is sung (always,
+  for word-timed lyrics), and a
   Vocals slider (in place of the volume slider) sets how much of the singer is left, from none
   to all of it. Lyrics with their own word times use them; for the rest, the words are paced
   across each line by their syllables. The vocal remover works on the stereo mix, so it
@@ -97,7 +107,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.8.2.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.9.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.

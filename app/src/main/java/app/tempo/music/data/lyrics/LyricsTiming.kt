@@ -1,6 +1,7 @@
 package app.tempo.music.data.lyrics
 
 /** One word (or syllable) and when it's sung. [text] includes the space after it, if any. */
+@kotlinx.serialization.Serializable
 data class LyricWord(val startMs: Long, val endMs: Long, val text: String)
 
 /** What the lyrics view shows: sung lines, and the dots that count through instrumental breaks. */
@@ -10,7 +11,9 @@ sealed interface LyricEntry {
 
     /**
      * A line with a time for every word. [exact] is true when the times came with the lyrics
-     * and false when they were estimated from the line's start and length.
+     * and false when they were estimated from the line's start and length. [background] is
+     * backing vocals sung alongside, shown smaller underneath; [alignEnd] puts a duet's second
+     * singer on the right.
      */
     data class Line(
         val text: String,
@@ -18,6 +21,8 @@ sealed interface LyricEntry {
         override val startMs: Long,
         override val endMs: Long,
         val exact: Boolean,
+        val background: List<LyricWord> = emptyList(),
+        val alignEnd: Boolean = false,
     ) : LyricEntry
 
     data class Interlude(override val startMs: Long, override val endMs: Long) : LyricEntry
@@ -54,8 +59,9 @@ object LyricsTiming {
             }
             val exact = line.words.isNotEmpty()
             val words = if (exact) closeWords(line.words, next) else estimateWords(line.text, line.timeMs, next - line.timeMs)
-            val end = words.last().endMs
-            entries += LyricEntry.Line(line.text, words, line.timeMs, end, exact)
+            val background = if (line.background.isEmpty()) line.background else closeWords(line.background, next)
+            val end = maxOf(words.last().endMs, background.lastOrNull()?.endMs ?: 0)
+            entries += LyricEntry.Line(line.text, words, line.timeMs, end, exact, background, line.alignEnd)
 
             val following = lines.getOrNull(i + 1)
             if (following != null && following.text.isNotBlank() && following.timeMs - end >= MIN_INTERLUDE_MS + 2_000) {
