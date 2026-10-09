@@ -20,7 +20,8 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 - **Charts**: official YouTube Charts. Top 40 and Top 100 songs and top artists, for Global
   and about 60 countries. Charts update weekly and show rank movement (▲ ▼ NEW). Chart songs
-  use the official audio ("art track") rather than the music video.
+  use the official audio ("art track") rather than the music video. Charts are saved on the
+  device, so if YouTube Charts is busy (it limits how often it answers) the last ones still show.
 - **Home**: Made for You, Top Picks, Recently Played, Top Songs, Top Artists, and playlist
   shelves that rotate daily.
 - **Made for You**: mixes built every day from what you play and love. Three Daily Mixes, each
@@ -92,7 +93,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.8.0.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.8.1.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.

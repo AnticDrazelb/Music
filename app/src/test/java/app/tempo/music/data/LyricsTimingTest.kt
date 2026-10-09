@@ -46,6 +46,13 @@ class LyricsTimingTest {
     }
 
     @Test
+    fun splitsMixedScripts() {
+        assertEquals(listOf("Hello ", "世", "界 ", "again"), LyricsTiming.tokens("Hello 世界 again"))
+        assertEquals(listOf("사랑해 ", "baby"), LyricsTiming.tokens("사랑해 baby"))
+        assertEquals(emptyList<String>(), LyricsTiming.tokens("   "))
+    }
+
+    @Test
     fun addsInterludeDotsForIntroBreaksAndBlankLines() {
         val lines = LyricsRepository.parseLrc(
             """

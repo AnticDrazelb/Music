@@ -73,16 +73,44 @@ object LyricsTiming {
         w.copy(endMs = minOf(limit, natural).coerceAtLeast(w.startMs + 1))
     }
 
-    private val token = Regex("""[\p{IsHan}\p{IsHiragana}\p{IsKatakana}]|[^\s\p{IsHan}\p{IsHiragana}\p{IsKatakana}]+""")
+    /** Japanese and Chinese are written without spaces, so each character is sung on its own. */
+    private fun isCharacterWord(codePoint: Int): Boolean = when (Character.UnicodeScript.of(codePoint)) {
+        Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA -> true
+        else -> false
+    }
+
+    /**
+     * Splits a line into words (with the spaces after them) and CJK characters. Written by hand
+     * because Android's regex engine doesn't accept Java's \p{IsHan}-style script classes.
+     */
+    internal fun tokens(text: String): List<String> {
+        val starts = mutableListOf<Int>()
+        var i = 0
+        var inWord = false
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            when {
+                isCharacterWord(cp) -> {
+                    starts += i
+                    inWord = false
+                }
+                Character.isWhitespace(cp) -> inWord = false
+                !inWord -> {
+                    starts += i
+                    inWord = true
+                }
+            }
+            i += Character.charCount(cp)
+        }
+        if (starts.isEmpty()) return emptyList()
+        starts[0] = 0
+        return starts.mapIndexed { n, start -> text.substring(start, starts.getOrNull(n + 1) ?: text.length) }
+    }
 
     /** Spreads [text] (one line) over up to [availableMs] from [startMs]. */
     fun estimateWords(text: String, startMs: Long, availableMs: Long): List<LyricWord> {
-        val matches = token.findAll(text).toList()
-        if (matches.isEmpty()) return listOf(LyricWord(startMs, startMs + availableMs.coerceAtLeast(1), text))
-        val pieces = matches.mapIndexed { i, m ->
-            val from = if (i == 0) 0 else m.range.first
-            text.substring(from, matches.getOrNull(i + 1)?.range?.first ?: text.length)
-        }
+        val pieces = tokens(text)
+        if (pieces.isEmpty()) return listOf(LyricWord(startMs, startMs + availableMs.coerceAtLeast(1), text))
         val weights = pieces.map { syllables(it).toLong() }
         val total = weights.sum()
         val duration = minOf(availableMs, maxOf(MIN_LINE_MS, total * MAX_MS_PER_SYLLABLE)).coerceAtLeast(1)
@@ -96,12 +124,13 @@ object LyricsTiming {
     }
 
     private val vowels = Regex("""[aeiouyàáâãäåæèéêëìíîïòóôõöøœùúûüýÿаеёиоуыэюяіїєαεηιουω]+""")
-    private val cjk = Regex("""[\p{IsHan}\p{IsHiragana}\p{IsKatakana}\p{IsHangul}]""")
 
     /** Roughly how many syllables it takes to sing [word]; at least 1. */
     fun syllables(word: String): Int {
         val w = word.lowercase().trim()
-        cjk.findAll(w).count().takeIf { it > 0 }?.let { return it }
+        // Each Chinese or Japanese character, and each Korean syllable block, is one syllable.
+        w.codePoints().filter { isCharacterWord(it) || Character.UnicodeScript.of(it) == Character.UnicodeScript.HANGUL }
+            .count().toInt().takeIf { it > 0 }?.let { return it }
         val letters = w.count { it.isLetter() }
         if (letters == 0) return 1
         var count = vowels.findAll(w).count()

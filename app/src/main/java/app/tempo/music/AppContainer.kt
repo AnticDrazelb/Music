@@ -47,7 +47,7 @@ class AppContainer(context: Context) {
     val settings = SettingsRepository(appContext, appScope)
     val library = LibraryRepository(database)
     val youtube = YouTubeRepository(httpClient)
-    val charts = ChartsRepository(httpClient)
+    val charts = ChartsRepository(httpClient, File(appContext.filesDir, "charts"))
     val lyrics = LyricsRepository(
         httpClient,
         File(appContext.filesDir, "lyrics"),

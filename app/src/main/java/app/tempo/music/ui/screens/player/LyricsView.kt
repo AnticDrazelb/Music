@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.ResolvedTextDirection
 import app.tempo.music.data.lyrics.LyricEntry
+import app.tempo.music.data.lyrics.LyricWord
 import app.tempo.music.data.lyrics.LyricsTiming
 import kotlin.math.PI
 import kotlin.math.floor
@@ -119,7 +120,16 @@ private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs
     var lastUserScroll by remember { mutableLongStateOf(0L) }
     var position by remember { mutableLongStateOf(player.positionMs) }
     val topOffset = with(LocalDensity.current) { -90.dp.roundToPx() }
-    val entries = remember(lines, songEndMs) { LyricsTiming.entries(lines, songEndMs) }
+    val entries = remember(lines, songEndMs) {
+        // Timing is a nicety: if it ever fails, show the lines as they are rather than crash.
+        runCatching { LyricsTiming.entries(lines, songEndMs) }.getOrElse { e ->
+            android.util.Log.w("Lyrics", "Word timing failed", e)
+            lines.filter { it.text.isNotBlank() }.map { line ->
+                val end = lines.getOrNull(lines.indexOf(line) + 1)?.timeMs ?: (line.timeMs + 5_000)
+                LyricEntry.Line(line.text, listOf(LyricWord(line.timeMs, end, line.text)), line.timeMs, end, exact = false)
+            }
+        }
+    }
     // Read only while drawing, so following the song every frame redraws without recomposing.
     val positionNow = remember { { position } }
 

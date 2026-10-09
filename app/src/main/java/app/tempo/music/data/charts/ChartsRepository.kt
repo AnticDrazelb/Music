@@ -9,6 +9,9 @@ import app.tempo.music.data.model.ChartKind
 import app.tempo.music.data.model.Song
 import app.tempo.music.data.youtube.YouTubeUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,6 +27,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.io.IOException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -33,11 +37,17 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Client for YouTube's public music charts (charts.youtube.com): weekly Top 100 songs and
  * artists for "global" and ~60 countries.
+ *
+ * charts.youtube.com refuses bursts of requests (HTTP 429), so requests go out one at a time,
+ * a refusal is retried after a pause, and each chart is kept in [cacheDir]. Charts change
+ * weekly, so a saved one is used for [FRESH_MS] without asking again, and an older one is shown
+ * whenever YouTube can't be reached.
  */
-class ChartsRepository(private val client: OkHttpClient) {
+class ChartsRepository(private val client: OkHttpClient, private val cacheDir: File? = null) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = ConcurrentHashMap<String, Pair<Long, Any>>()
+    private val network = Mutex()
 
     /** Weekly Top 100 songs for [countryCode] ("global" or a two-letter code). */
     suspend fun chart(kind: ChartKind, countryCode: String): Chart {
@@ -65,6 +75,41 @@ class ChartsRepository(private val client: OkHttpClient) {
     }
 
     private suspend fun fetch(kind: ChartKind, code: String): JsonObject = withContext(Dispatchers.IO) {
+        val file = cacheDir?.let { File(it, "${kind.name.lowercase()}_$code.json") }
+        val saved = file?.takeIf { it.exists() }
+        if (saved != null && System.currentTimeMillis() - saved.lastModified() < FRESH_MS) {
+            readSaved(saved)?.let { return@withContext it }
+        }
+        try {
+            network.withLock { download(kind, code) }.also { content ->
+                runCatching {
+                    file?.parentFile?.mkdirs()
+                    file?.writeText(content.toString())
+                }
+            }
+        } catch (e: IOException) {
+            saved?.let(::readSaved) ?: throw e
+        }
+    }
+
+    private fun readSaved(file: File): JsonObject? = runCatching { json.parseToJsonElement(file.readText()).jsonObj }.getOrNull()
+
+    /** One request, retried after a pause when YouTube says it's busy. */
+    private suspend fun download(kind: ChartKind, code: String): JsonObject {
+        var attempt = 0
+        while (true) {
+            try {
+                return request(kind, code)
+            } catch (e: BusyException) {
+                if (++attempt >= RETRIES) throw IOException("YouTube Charts is busy right now. Try again in a minute.")
+                delay(e.retryAfterMs ?: (2_000L * attempt * attempt))
+            }
+        }
+    }
+
+    private class BusyException(val retryAfterMs: Long?) : IOException()
+
+    private fun request(kind: ChartKind, code: String): JsonObject {
         val period = "&chart_params_period_type=WEEKLY"
         val body = buildJsonObject {
             putJsonObject("context") {
@@ -93,9 +138,12 @@ class ChartsRepository(private val client: OkHttpClient) {
             .build()
 
         client.newCall(request).execute().use { response ->
+            if (response.code == 429 || response.code == 503) {
+                throw BusyException(response.header("Retry-After")?.toLongOrNull()?.times(1000)?.coerceAtMost(10_000))
+            }
             if (!response.isSuccessful) throw IOException("Charts unavailable (HTTP ${response.code})")
             val root = json.parseToJsonElement(response.body.string()).jsonObj
-            root.path("contents", "sectionListRenderer", "contents").arr?.firstOrNull()
+            return root.path("contents", "sectionListRenderer", "contents").arr?.firstOrNull()
                 ?.path("musicAnalyticsSectionRenderer", "content")?.jsonObj
                 ?: throw IOException("Unexpected charts response")
         }
@@ -166,6 +214,8 @@ class ChartsRepository(private val client: OkHttpClient) {
     companion object {
         const val GLOBAL = "global"
         private const val CACHE_MS = 60 * 60 * 1000L
+        private const val FRESH_MS = 6 * 60 * 60 * 1000L
+        private const val RETRIES = 3
     }
 }
 

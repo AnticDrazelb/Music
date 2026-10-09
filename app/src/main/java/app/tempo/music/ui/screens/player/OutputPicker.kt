@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material.icons.rounded.SpeakerGroup
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,8 +115,8 @@ class OutputsState(private val context: Context) {
     }
 
     private fun refresh() {
-        castDevices = router.routes.filter { !it.isDefaultOrBluetooth && it.isEnabled && it.matchesSelector(selector) }
-        castingTo = router.selectedRoute.takeIf { !it.isDefaultOrBluetooth && it.matchesSelector(selector) }
+        castDevices = router.routes.filter { !it.isPhoneOrBluetooth && it.isEnabled && it.matchesSelector(selector) }
+        castingTo = router.selectedRoute.takeIf { !it.isPhoneOrBluetooth && it.matchesSelector(selector) }
         local = localOutput()
         version++
     }
@@ -140,7 +141,11 @@ class OutputsState(private val context: Context) {
             return AudioOutput(name, Icons.Rounded.BluetoothAudio, casting = false)
         }
         if (outputs.any { it.type in WIRED_TYPES }) return AudioOutput("Headphones", Icons.Rounded.Headphones, casting = false)
-        return AudioOutput("This Phone", Icons.Rounded.PhoneAndroid, casting = false)
+        return if (context.resources.configuration.smallestScreenWidthDp >= 600) {
+            AudioOutput("This Tablet", Icons.Rounded.TabletAndroid, casting = false)
+        } else {
+            AudioOutput("This Phone", Icons.Rounded.PhoneAndroid, casting = false)
+        }
     }
 
     private companion object {
@@ -162,7 +167,7 @@ class OutputsState(private val context: Context) {
     }
 }
 
-private val MediaRouter.RouteInfo.isDefaultOrBluetooth: Boolean get() = isDefault || isBluetooth
+private val MediaRouter.RouteInfo.isPhoneOrBluetooth: Boolean get() = isDefault || isBluetooth
 
 /** Follows the current output while on screen, without searching the network. */
 @Composable
@@ -236,7 +241,7 @@ fun OutputPickerSheet(onDismiss: () -> Unit) {
             }
             if (outputs.castingTo != null) {
                 Text(
-                    "The equalizer, karaoke and crossfade work when playing on this phone.",
+                    "The equalizer, karaoke and crossfade only work when playing on this device.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
