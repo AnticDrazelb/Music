@@ -24,8 +24,8 @@ android {
         applicationId = "app.tempo.music"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.7.0"
+        versionCode = 11
+        versionName = "1.8.0"
     }
 
     signingConfigs {
@@ -131,6 +131,8 @@ dependencies {
     implementation(libs.media3.session)
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.database)
+    implementation(libs.media3.cast)
+    implementation(libs.mediarouter)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

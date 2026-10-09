@@ -65,6 +65,11 @@
             android:exported="true"
             tools:ignore="ExportedContentProvider" />
 
+        <!-- Casting to Chromecast, Google TV and Cast speakers -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="app.tempo.music.playback.cast.CastOptionsProvider" />
+
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

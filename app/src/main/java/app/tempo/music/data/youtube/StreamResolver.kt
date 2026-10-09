@@ -46,6 +46,9 @@ class StreamResolver(
         return pick(info, high = true) ?: throw IOException("No downloadable audio found for this song")
     }
 
+    /** The audio format of an already resolved stream, without resolving. */
+    fun cachedMimeType(videoId: String): String? = cache[videoId]?.mimeType
+
     fun invalidate(videoId: String) {
         cache.remove(videoId)
     }

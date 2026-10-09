@@ -6,7 +6,10 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
+import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.RemoteCastPlayer
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -25,6 +28,10 @@ import androidx.media3.session.SessionError
 import app.tempo.music.MainActivity
 import app.tempo.music.R
 import app.tempo.music.TempoApp
+import app.tempo.music.playback.cast.CastLocks
+import app.tempo.music.playback.cast.CastMediaItemConverter
+import app.tempo.music.playback.cast.CastStreamServer
+import app.tempo.music.playback.cast.CastSupport
 import app.tempo.music.playback.eq.EqualizerRenderersFactory
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -48,7 +55,12 @@ class PlaybackService : MediaLibraryService() {
     private val container by lazy { (application as TempoApp).container }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private lateinit var player: ExoPlayer
+    /** Plays on the phone. */
+    private lateinit var exoPlayer: ExoPlayer
+    /** What the session controls: [exoPlayer], or a Cast device while casting. */
+    private lateinit var player: Player
+    private var castServer: CastStreamServer? = null
+    private var castLocks: CastLocks? = null
     private lateinit var crossfader: Crossfader
     private var session: MediaLibrarySession? = null
     private val tree by lazy { LibraryTree(container) }
@@ -73,16 +85,17 @@ class PlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        player = ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state, container.karaoke.state))
+        exoPlayer = ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state, container.karaoke.state))
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(music, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        player = castPlayer(dataSourceFactory) ?: exoPlayer
         player.addListener(listener)
 
         crossfader = Crossfader(
-            player,
+            exoPlayer,
             createSecondary = {
                 // Only ever plays the outgoing song's last seconds; the main player keeps audio
                 // focus, the wake lock and the media session.
@@ -93,7 +106,7 @@ class PlaybackService : MediaLibraryService() {
             },
             durationMs = {
                 val settings = container.settings
-                if (!settings.crossfade.value || container.stopAfterCurrentSong.value) 0L
+                if (!settings.crossfade.value || container.stopAfterCurrentSong.value || isCasting()) 0L
                 else settings.crossfadeSeconds.value * 1000L
             },
         )
@@ -142,11 +155,51 @@ class PlaybackService : MediaLibraryService() {
         crossfader.release()
         session?.run {
             player.release()
+            if (player !== exoPlayer) exoPlayer.release()
             release()
         }
         session = null
+        castLocks?.release()
+        castServer?.stop()
         super.onDestroy()
     }
+
+    // ------------------------------------------------------------------ casting
+
+    /**
+     * A player that hands playback over to a Chromecast, Google TV or Cast speaker when one is
+     * picked, and back to the phone when casting stops, keeping the queue and position. Null
+     * without Google Play services, where only the phone (and Bluetooth) can play.
+     */
+    private fun castPlayer(dataSourceFactory: androidx.media3.datasource.DataSource.Factory): Player? = try {
+        if (!CastSupport.init(this)) {
+            null
+        } else {
+            val server = CastStreamServer(dataSourceFactory).also { castServer = it }
+            castLocks = CastLocks(this)
+            val remote = RemoteCastPlayer.Builder(this)
+                .setMediaItemConverter(
+                    CastMediaItemConverter(this, server) { id ->
+                        when (container.downloads.fileFor(id)?.extension) {
+                            "webm", "opus" -> "audio/webm"
+                            "m4a", "mp4" -> "audio/mp4"
+                            else -> container.streamResolver.cachedMimeType(id)
+                        }
+                    },
+                )
+                .build()
+            CastPlayer.Builder(this)
+                .setLocalPlayer(exoPlayer)
+                .setRemotePlayer(remote)
+                .build()
+        }
+    } catch (e: Exception) {
+        android.util.Log.w("PlaybackService", "Cast unavailable", e)
+        null
+    }
+
+    private fun isCasting(): Boolean =
+        ::player.isInitialized && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
 
     // ------------------------------------------------------------------ session callback
 
@@ -273,6 +326,16 @@ class PlaybackService : MediaLibraryService() {
     // ------------------------------------------------------------------ player listener
 
     private val listener = object : Player.Listener {
+        override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+            // The TV streams from this phone, so keep it awake and on Wi-Fi while casting.
+            if (deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE) {
+                castServer?.start()
+                castLocks?.acquire()
+            } else {
+                castLocks?.release()
+            }
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             mediaItem ?: return
             val song = MediaItems.toSong(mediaItem)

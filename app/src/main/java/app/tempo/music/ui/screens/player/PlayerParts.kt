@@ -149,13 +149,13 @@ fun ThinSlider(
 }
 
 /** System media volume, polled so hardware button changes are reflected. */
-class VolumeController(context: Context) {
+open class VolumeController(context: Context) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
 
-    fun get(): Float = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / max.toFloat()
+    open fun get(): Float = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / max.toFloat()
 
-    fun set(fraction: Float) {
+    open fun set(fraction: Float) {
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, (fraction * max).toInt().coerceIn(0, max), 0)
     }
 }

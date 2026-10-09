@@ -48,7 +48,6 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -100,7 +99,6 @@ import app.tempo.music.playback.QueueEntry
 import app.tempo.music.ui.components.Artwork
 import app.tempo.music.ui.components.LocalLikedIds
 import app.tempo.music.ui.components.LocalSongMenu
-import app.tempo.music.ui.components.shareSong
 import app.tempo.music.ui.navigation.LocalAppContainer
 import app.tempo.music.ui.components.SaveAsPlaylistDialog
 import app.tempo.music.ui.navigation.LocalNavigator
@@ -129,6 +127,9 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
     val state by player.state.collectAsState()
     val autoplay by container.settings.autoplay.collectAsState()
     val karaoke by container.karaoke.enabled.collectAsState()
+    val outputs = rememberOutputs()
+    var showOutputs by remember { mutableStateOf(false) }
+    if (showOutputs) OutputPickerSheet(onDismiss = { showOutputs = false })
     val song = state.current
     val colors = animatedArtworkColors(song?.thumbnailUrl)
     var panel by rememberSaveable { mutableStateOf(PlayerPanel.ARTWORK) }
@@ -294,7 +295,17 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                 }
             }
 
-            if (karaoke) VocalsBar() else VolumeBar()
+            if (karaoke) VocalsBar() else VolumeBar(outputs)
+            val output = outputs.current
+            if (output.casting) {
+                Text(
+                    "Playing on ${output.name}",
+                    color = White70,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).clickable { showOutputs = true },
+                )
+            }
 
             // Bottom actions
             Row(
@@ -309,8 +320,12 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                     container.karaoke.toggle()
                     if (!karaoke) panel = PlayerPanel.LYRICS
                 }
-                IconButton(onClick = { shareSong(context, song) }) {
-                    Icon(Icons.Rounded.Share, "Share", tint = White70)
+                IconButton(onClick = { showOutputs = true }) {
+                    Icon(
+                        output.icon,
+                        "Play On: ${output.name}",
+                        tint = if (output.casting) Color.White else White70,
+                    )
                 }
                 ToggleGlassButton(Icons.AutoMirrored.Rounded.QueueMusic, "Playing Next", panel == PlayerPanel.QUEUE) {
                     panel = if (panel == PlayerPanel.QUEUE) PlayerPanel.ARTWORK else PlayerPanel.QUEUE
@@ -403,13 +418,21 @@ private fun VocalsBar() {
     }
 }
 
+/** The phone's media volume, or the TV or speaker's while casting. */
 @Composable
-private fun VolumeBar() {
+private fun VolumeBar(outputs: OutputsState) {
     val context = LocalContext.current
-    val volume = remember { VolumeController(context) }
-    var level by remember { mutableFloatStateOf(volume.get()) }
+    val phone = remember { VolumeController(context) }
+    val castRoute = outputs.castingTo
+    val volume = remember(castRoute) {
+        if (castRoute == null) phone else object : VolumeController(context) {
+            override fun get() = castRoute.volume / castRoute.volumeMax.coerceAtLeast(1).toFloat()
+            override fun set(fraction: Float) = castRoute.requestSetVolume((fraction * castRoute.volumeMax).roundToInt())
+        }
+    }
+    var level by remember(volume) { mutableFloatStateOf(volume.get()) }
     var dragging by remember { mutableStateOf(false) }
-    LaunchedEffect(dragging) {
+    LaunchedEffect(dragging, volume) {
         while (!dragging) {
             level = volume.get()
             delay(600)

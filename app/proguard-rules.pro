@@ -30,3 +30,6 @@
 -keepclasseswithmembers class app.tempo.music.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# The Cast framework creates the options provider named in the manifest by reflection.
+-keep class app.tempo.music.playback.cast.CastOptionsProvider { *; }
