@@ -7,6 +7,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 <img src="docs/screenshots/05_chart_top100.jpg" width="200">
 <img src="docs/screenshots/09_now_playing.jpg" width="200">
 <img src="docs/screenshots/09b_lyrics.jpg" width="200">
+<img src="docs/screenshots/09c_karaoke.jpg" width="200">
 </p>
 <p>
 <img src="docs/screenshots/03_browse.jpg" width="200">
@@ -51,7 +52,15 @@ An Apple Music–style music player for Android that streams from YouTube.
   every phone. Settings → Playback → Equalizer, or ⋯ on Now Playing.
 - **Lyrics**: time-synced lyrics that follow the song, with the current line highlighted.
   Tap a line to jump to it. Lyrics come from [LRCLIB](https://lrclib.net) and are saved on
-  the device after the first view, so they also show offline.
+  the device after the first view, so they also show offline. Instrumental breaks show
+  Apple Music's three dots, which light up as the break goes on.
+- **Karaoke**: like Apple Music Sing. Tap the microphone on Now Playing to turn the lead
+  vocal down and sing along. The lyrics fill in word by word as each word is sung, and a
+  Vocals slider (in place of the volume slider) sets how much of the singer is left, from none
+  to all of it. Lyrics with their own word times use them; for the rest, the words are paced
+  across each line by their syllables. The vocal remover works on the stereo mix, so it
+  can't take out a voice completely: some reverb and backing vocals remain, and mono
+  recordings are unchanged.
 - **Downloads**: save any song, album, playlist or your Favorites for offline listening.
   Downloads run in the background with a progress notification and play straight from
   storage, with no connection needed. Manage them in Library → Downloaded or in Settings.
@@ -72,7 +81,7 @@ An Apple Music–style music player for Android that streams from YouTube.
 
 ## Install
 
-1. Download `Tempo-1.6.2.apk` (see the latest build artifact or release). It installs over
+1. Download `Tempo-1.7.0.apk` (see the latest build artifact or release). It installs over
    an earlier version and keeps your library.
 2. Open it on your phone and allow "Install unknown apps" for your browser or file manager.
 3. Android 8.0 (API 26) or newer.
@@ -107,6 +116,7 @@ sign an APK that Android will accept as an update to Tempo.
 | Storage | Room for playlists, favourites, history and the download queue. DataStore for settings. |
 | Crossfade | `playback/Crossfader.kt`. ExoPlayer plays one song at a time, so a second, hidden player loads the last seconds of the current song in advance. When the main player reaches the fade point (a position-triggered `PlayerMessage`), it moves on to the next song while the hidden player finishes the old one, and their volumes follow equal-power (sin/cos) curves. |
 | Equalizer | `playback/eq/`. An ExoPlayer `AudioProcessor` in each player's audio sink runs ten peaking biquads (RBJ cookbook) in double precision on the decoded PCM. The level is lowered by the curve's peak boost and a peak limiter catches the rest, so boosts never clip. A flat curve passes audio through bit for bit. |
+| Karaoke | `playback/karaoke/`. Another `AudioProcessor`, ahead of the equaliser. Lead vocals are mixed dead centre, so it takes a short-time Fourier transform of both channels (2048-sample frames, 75% overlap) and turns down each frequency bin by how alike the left and right channels are there, only between 100 Hz and 14 kHz so the bass and kick drum stay. Panned instruments are left alone. The audio is always 43 ms late, so karaoke can be switched on mid-song without a jump; at full vocals the transform is skipped and the samples pass through unchanged. Word timing for lyrics is in `data/lyrics/LyricsTiming.kt`. |
 | Downloads | `data/download/`. Chunked, resumable range requests in a foreground service. Files are kept in the app's private music folder. |
 
 ## Caveats

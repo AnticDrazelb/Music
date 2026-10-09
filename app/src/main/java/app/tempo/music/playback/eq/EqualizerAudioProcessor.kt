@@ -11,6 +11,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import app.tempo.music.playback.karaoke.KaraokeAudioProcessor
+import app.tempo.music.playback.karaoke.KaraokeState
 import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.exp
@@ -22,9 +24,12 @@ class EqualizerState(initial: EqSettings = EqSettings()) {
     @Volatile var settings: EqSettings = initial
 }
 
-/** Renderers whose audio output runs through the equaliser. */
-class EqualizerRenderersFactory(context: Context, private val equalizer: EqualizerState) :
-    DefaultRenderersFactory(context) {
+/** Renderers whose audio output runs through the karaoke vocal remover and the equaliser. */
+class EqualizerRenderersFactory(
+    context: Context,
+    private val equalizer: EqualizerState,
+    private val karaoke: KaraokeState = KaraokeState(),
+) : DefaultRenderersFactory(context) {
 
     override fun buildAudioSink(
         context: Context,
@@ -33,7 +38,7 @@ class EqualizerRenderersFactory(context: Context, private val equalizer: Equaliz
     ): AudioSink = DefaultAudioSink.Builder(context)
         .setEnableFloatOutput(enableFloatOutput)
         .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
-        .setAudioProcessors(arrayOf(EqualizerAudioProcessor(equalizer)))
+        .setAudioProcessors(arrayOf(KaraokeAudioProcessor(karaoke), EqualizerAudioProcessor(equalizer)))
         .build()
 }
 

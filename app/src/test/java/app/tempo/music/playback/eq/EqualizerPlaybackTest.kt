@@ -12,6 +12,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.test.utils.FakeClock
 import androidx.media3.test.utils.robolectric.RobolectricUtil.runMainLooperUntil
 import androidx.test.core.app.ApplicationProvider
+import app.tempo.music.playback.karaoke.KaraokeState
+import app.tempo.music.playback.karaoke.VocalRemover
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -77,9 +79,9 @@ class EqualizerPlaybackTest {
     }
 
     /** Plays the file to the end and returns what the AudioTrack received. */
-    private fun play(settings: EqSettings): ShortArray {
+    private fun play(settings: EqSettings, karaoke: KaraokeState = KaraokeState()): ShortArray {
         synchronized(captured) { captured.reset() }
-        val player = ExoPlayer.Builder(context, EqualizerRenderersFactory(context, EqualizerState(settings)))
+        val player = ExoPlayer.Builder(context, EqualizerRenderersFactory(context, EqualizerState(settings), karaoke))
             .setClock(FakeClock(/* isAutoAdvancing = */ true))
             .build()
         player.setMediaItem(MediaItem.fromUri(Uri.fromFile(song)))
@@ -102,11 +104,24 @@ class EqualizerPlaybackTest {
     @Test
     fun flatPlaysTheSongUnchanged() {
         val out = play(EqSettings(preset = EqPreset.FLAT))
-        assertEquals(songSamples.size, out.size)
+        // The karaoke stage delays everything by a fixed amount, so turning it on mid-song
+        // doesn't make the music jump; the song itself arrives complete and unchanged.
+        val delay = VocalRemover(rate, KaraokeState()).latency * 2
+        assertEquals(songSamples.size + delay, out.size)
         // Media3's audio sink fades the first 20 ms in to avoid a pop; after that every sample
         // reaches the AudioTrack exactly as it is in the file.
         val afterFadeIn = rate / 20 * 2
-        assertTrue((afterFadeIn until songSamples.size).all { out[it] == songSamples[it] })
+        assertTrue((afterFadeIn until songSamples.size).all { out[delay + it] == songSamples[it] })
+    }
+
+    @Test
+    fun karaokeLeavesInstrumentsOnOneSideAlone() {
+        // The tones are on separate channels, like panned instruments, so there is no centred
+        // vocal for karaoke to remove.
+        val flat = play(EqSettings(preset = EqPreset.FLAT))
+        val karaoke = play(EqSettings(preset = EqPreset.FLAT), KaraokeState().apply { vocals = 0f })
+        assertEquals("62 Hz", 0.0, levelDb(karaoke, 0) - levelDb(flat, 0), 0.3)
+        assertEquals("4 kHz", 0.0, levelDb(karaoke, 1) - levelDb(flat, 1), 0.3)
     }
 
     @Test

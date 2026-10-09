@@ -53,6 +53,8 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +90,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
 import androidx.core.view.WindowCompat
 import androidx.media3.common.Player
@@ -124,6 +128,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
     val context = LocalContext.current
     val state by player.state.collectAsState()
     val autoplay by container.settings.autoplay.collectAsState()
+    val karaoke by container.karaoke.enabled.collectAsState()
     val song = state.current
     val colors = animatedArtworkColors(song?.thumbnailUrl)
     var panel by rememberSaveable { mutableStateOf(PlayerPanel.ARTWORK) }
@@ -289,7 +294,7 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
                 }
             }
 
-            VolumeBar()
+            if (karaoke) VocalsBar() else VolumeBar()
 
             // Bottom actions
             Row(
@@ -299,6 +304,10 @@ fun NowPlayingScreen(onCollapse: () -> Unit) {
             ) {
                 ToggleGlassButton(Icons.Rounded.Lyrics, "Lyrics", panel == PlayerPanel.LYRICS) {
                     panel = if (panel == PlayerPanel.LYRICS) PlayerPanel.ARTWORK else PlayerPanel.LYRICS
+                }
+                ToggleGlassButton(Icons.Rounded.Mic, if (karaoke) "Turn Off Karaoke" else "Karaoke", karaoke) {
+                    container.karaoke.toggle()
+                    if (!karaoke) panel = PlayerPanel.LYRICS
                 }
                 IconButton(onClick = { shareSong(context, song) }) {
                     Icon(Icons.Rounded.Share, "Share", tint = White70)
@@ -372,6 +381,25 @@ private fun SeekBar(state: PlayerUiState) {
             }
             Text(if (duration > 0) "-" + formatTime(duration - elapsed) else "--:--", color = White55, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
+    }
+}
+
+/** Karaoke's vocal level, in place of the volume slider while karaoke is on. */
+@Composable
+private fun VocalsBar() {
+    val karaoke = LocalAppContainer.current.karaoke
+    val vocals by karaoke.vocals.collectAsState()
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.MicOff, null, tint = White55, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        ThinSlider(
+            value = vocals,
+            onValueChange = karaoke::setVocals,
+            onValueChangeFinished = {},
+            modifier = Modifier.weight(1f).semantics { contentDescription = "Vocal volume" },
+        )
+        Spacer(Modifier.width(8.dp))
+        Icon(Icons.Rounded.Mic, null, tint = White55, modifier = Modifier.size(20.dp))
     }
 }
 

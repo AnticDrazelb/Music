@@ -20,6 +20,7 @@ import app.tempo.music.data.youtube.StreamResolver
 import app.tempo.music.data.youtube.YouTubeRepository
 import app.tempo.music.playback.PlayerConnection
 import app.tempo.music.playback.eq.EqualizerController
+import app.tempo.music.playback.karaoke.KaraokeController
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +55,9 @@ class AppContainer(context: Context) {
     )
 
     val equalizer = EqualizerController(settings, appScope)
+
+    /** Karaoke mode. Not saved: every launch starts with the original mix. */
+    val karaoke = KaraokeController()
 
     val streamResolver = StreamResolver(youtube) {
         settings.highQuality.value && !(settings.dataSaverOnCellular.value && NetworkState.isMetered(appContext))

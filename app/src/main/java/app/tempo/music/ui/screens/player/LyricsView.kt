@@ -55,14 +55,31 @@ import app.tempo.music.ui.components.userMessage
 import app.tempo.music.ui.navigation.LocalAppContainer
 import app.tempo.music.ui.navigation.LocalPlayer
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.ResolvedTextDirection
+import app.tempo.music.data.lyrics.LyricEntry
+import app.tempo.music.data.lyrics.LyricsTiming
+import kotlin.math.PI
+import kotlin.math.floor
+import kotlin.math.sin
 
-/** Lyrics for the current song, synced line-by-line with playback when available. */
+/**
+ * Lyrics for the current song, synced with playback when available. In karaoke mode (or when the
+ * lyrics time each word) the current line fills in word by word as it's sung.
+ */
 @Composable
 fun LyricsPanel(song: Song, state: PlayerUiState, modifier: Modifier = Modifier) {
     val container = LocalAppContainer.current
     var attempt by remember(song.id) { mutableIntStateOf(0) }
     var result by remember(song.id) { mutableStateOf<Load<Lyrics>>(Load.Loading) }
     val durationSec = if (song.durationSec > 0) song.durationSec else state.durationMs / 1000
+    val karaoke by container.karaoke.enabled.collectAsState()
 
     LaunchedEffect(song.id, attempt) {
         result = Load.Loading
@@ -81,7 +98,7 @@ fun LyricsPanel(song: Song, state: PlayerUiState, modifier: Modifier = Modifier)
                 TextButton(onClick = { attempt++ }) { Text("Try Again", color = Color.White, fontWeight = FontWeight.SemiBold) }
             }
             is Load.Ready -> when (val lyrics = r.data) {
-                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, state)
+                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, state, durationSec * 1000, karaoke)
                 is Lyrics.Plain -> PlainLyrics(lyrics.text)
                 Lyrics.Instrumental -> Message("Instrumental", "This song has no lyrics.", Modifier.align(Alignment.Center))
                 Lyrics.NotFound -> Message(
@@ -95,25 +112,32 @@ fun LyricsPanel(song: Song, state: PlayerUiState, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState) {
+private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState, songEndMs: Long, wordByWord: Boolean) {
     val player = LocalPlayer.current
     val listState = rememberLazyListState()
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     var lastUserScroll by remember { mutableLongStateOf(0L) }
     var position by remember { mutableLongStateOf(player.positionMs) }
     val topOffset = with(LocalDensity.current) { -90.dp.roundToPx() }
+    val entries = remember(lines, songEndMs) { LyricsTiming.entries(lines, songEndMs) }
+    // Read only while drawing, so following the song every frame redraws without recomposing.
+    val positionNow = remember { { position } }
 
     LaunchedEffect(state.current?.id, state.isPlaying) {
         while (true) {
-            position = player.positionMs
-            delay(if (state.isPlaying) 150 else 500)
+            if (state.isPlaying) {
+                withFrameMillis { position = player.positionMs }
+            } else {
+                position = player.positionMs
+                delay(500)
+            }
         }
     }
     LaunchedEffect(dragged) { if (dragged) lastUserScroll = System.currentTimeMillis() }
 
     // Show a line slightly before it's sung, like Apple Music.
-    val current by remember(lines) {
-        derivedStateOf { lines.indexOfLast { it.timeMs <= position + 250 } }
+    val current by remember(entries) {
+        derivedStateOf { entries.indexOfLast { it.startMs <= position + 250 } }
     }
     LaunchedEffect(current) {
         val userScrolledRecently = System.currentTimeMillis() - lastUserScroll < 3500
@@ -128,39 +152,163 @@ private fun SyncedLyrics(lines: List<LyricLine>, state: PlayerUiState) {
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier.fillMaxSize().fadingEdges(),
     ) {
-        itemsIndexed(lines) { index, line ->
+        itemsIndexed(entries) { index, entry ->
             val active = index == current
-            val alpha by animateFloatAsState(
-                when {
-                    active -> 1f
-                    index < current -> 0.32f
-                    else -> 0.45f
-                },
-                label = "lineAlpha",
-            )
-            val scale by animateFloatAsState(if (active) 1f else 0.97f, label = "lineScale")
-            Text(
-                line.text.ifBlank { "♪" },
-                color = Color.White.copy(alpha = alpha),
-                fontSize = 27.sp,
-                lineHeight = 33.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-                    }
-                    .clickable {
-                        lastUserScroll = 0L
-                        player.seekTo(line.timeMs)
-                        if (!state.playWhenReady) player.togglePlayPause()
-                    }
-                    .padding(vertical = 8.dp),
-            )
+            when (entry) {
+                is LyricEntry.Interlude -> InterludeDots(entry, active, positionNow)
+                is LyricEntry.Line -> {
+                    val alpha by animateFloatAsState(
+                        when {
+                            active -> 1f
+                            index < current -> 0.32f
+                            else -> 0.45f
+                        },
+                        label = "lineAlpha",
+                    )
+                    val scale by animateFloatAsState(if (active) 1f else 0.97f, label = "lineScale")
+                    LyricLineText(
+                        entry,
+                        active = active,
+                        wordByWord = wordByWord || entry.exact,
+                        alpha = alpha,
+                        position = positionNow,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                            }
+                            .clickable {
+                                lastUserScroll = 0L
+                                player.seekTo(entry.startMs)
+                                if (!state.playWhenReady) player.togglePlayPause()
+                            }
+                            .padding(vertical = 8.dp),
+                    )
+                }
+            }
         }
         item { Credit() }
+    }
+}
+
+/**
+ * One line of lyrics. Word by word, the line being sung fills from dim to white as each word
+ * is sung, like Apple Music: a white copy of the text is drawn over the dim one and masked to
+ * the part already sung, with a soft edge that sweeps through the current word.
+ */
+@Composable
+internal fun LyricLineText(
+    entry: LyricEntry.Line,
+    active: Boolean,
+    wordByWord: Boolean,
+    alpha: Float,
+    position: () -> Long,
+    modifier: Modifier = Modifier,
+) {
+    val highlight by animateFloatAsState(if (active && wordByWord) 1f else 0f, label = "highlight")
+    if (highlight == 0f) {
+        LyricText(entry.text, Color.White.copy(alpha = alpha), modifier)
+        return
+    }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val edge = with(LocalDensity.current) { 18.dp.toPx() }
+    Box(modifier) {
+        LyricText(entry.text, Color.White.copy(alpha = 0.45f), Modifier.fillMaxWidth(), onTextLayout = { layout = it })
+        LyricText(
+            entry.text,
+            Color.White.copy(alpha = highlight),
+            Modifier
+                .fillMaxWidth()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    val l = layout ?: return@drawWithContent
+                    // Once the line is over it stays lit while it fades back.
+                    val sung = if (active) LyricsTiming.sungCharacters(entry, position()) else entry.text.length.toFloat()
+                    drawSungMask(l, sung, edge)
+                },
+        )
+    }
+}
+
+@Composable
+private fun LyricText(text: String, color: Color, modifier: Modifier = Modifier, onTextLayout: (TextLayoutResult) -> Unit = {}) {
+    Text(
+        text,
+        color = color,
+        fontSize = 27.sp,
+        lineHeight = 33.sp,
+        fontWeight = FontWeight.Bold,
+        onTextLayout = onTextLayout,
+        modifier = modifier,
+    )
+}
+
+/** Erases all but the first [sung] characters of the text (fractions included), with a soft edge. */
+private fun DrawScope.drawSungMask(layout: TextLayoutResult, sung: Float, edge: Float) {
+    val length = layout.layoutInput.text.length
+    for (line in 0 until layout.lineCount) {
+        val start = layout.getLineStart(line)
+        val end = layout.getLineEnd(line)
+        val top = layout.getLineTop(line)
+        val height = layout.getLineBottom(line) - top
+        if (sung >= end) continue
+        if (sung <= start || length == 0) {
+            drawRect(Color.Black, Offset(0f, top), Size(size.width, height), blendMode = BlendMode.DstOut)
+            continue
+        }
+        val i = floor(sung).toInt().coerceIn(start, length - 1)
+        val box = layout.getBoundingBox(i)
+        val fraction = sung - i
+        if (layout.getBidiRunDirection(i) == ResolvedTextDirection.Rtl) {
+            val x = box.right - fraction * box.width
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = x - edge / 2, endX = x + edge / 2),
+                Offset(0f, top),
+                Size(x + edge / 2, height),
+                blendMode = BlendMode.DstOut,
+            )
+        } else {
+            val x = box.left + fraction * box.width
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = x - edge / 2, endX = x + edge / 2),
+                Offset(x - edge / 2, top),
+                Size(size.width - x + edge / 2, height),
+                blendMode = BlendMode.DstOut,
+            )
+        }
+    }
+}
+
+/**
+ * Apple Music's three dots for an instrumental break: they light up one after another as the
+ * break goes on, breathe gently, and shrink away just before the singing starts again.
+ */
+@Composable
+internal fun InterludeDots(entry: LyricEntry.Interlude, active: Boolean, position: () -> Long) {
+    val presence by animateFloatAsState(if (active) 1f else 0.6f, label = "interlude")
+    Canvas(Modifier.padding(vertical = 14.dp).size(width = 64.dp, height = 18.dp)) {
+        val radius = 5.dp.toPx()
+        var progress = 0f
+        var scale = presence
+        if (active) {
+            val now = position()
+            val length = (entry.endMs - entry.startMs).coerceAtLeast(1)
+            progress = ((now - entry.startMs).toFloat() / length).coerceIn(0f, 1f)
+            scale *= 1f + 0.12f * sin(2 * PI.toFloat() * (now - entry.startMs) / 2_400f)
+            val left = entry.endMs - now
+            if (left < 500) scale *= (left / 500f).coerceIn(0f, 1f)
+        }
+        repeat(3) { i ->
+            val lit = (progress * 3 - i).coerceIn(0f, 1f)
+            drawCircle(
+                Color.White.copy(alpha = 0.35f + 0.65f * lit),
+                radius = radius * scale,
+                center = Offset(radius + i * (size.width - 2 * radius) / 2, size.height / 2),
+            )
+        }
     }
 }
 

@@ -200,6 +200,12 @@ open class ScreenshotTest {
         settleImages(6000)
         snap("09b_lyrics")
 
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Karaoke")).onFirst().performClick()
+        settleImages(2000)
+        snap("09d_karaoke_player")
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Turn Off Karaoke")).onFirst().performClick()
+        compose.waitForIdle()
+
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Playing Next")).onFirst().performClick()
         settleImages(2000)
         snap("10_queue")

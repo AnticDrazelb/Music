@@ -12,7 +12,11 @@ import java.io.File
 import java.io.IOException
 import kotlin.math.abs
 
-data class LyricLine(val timeMs: Long, val text: String)
+/**
+ * One line of synced lyrics. [words] is filled only when the lyrics give each word its own time
+ * (enhanced LRC); their texts joined together are exactly [text].
+ */
+data class LyricLine(val timeMs: Long, val text: String, val words: List<LyricWord> = emptyList())
 
 sealed interface Lyrics {
     /** Time-stamped lines, for karaoke-style highlighting. */
@@ -138,7 +142,7 @@ class LyricsRepository(
         runCatching {
             cacheDir.mkdirs()
             val cached = when (result) {
-                is Lyrics.Synced -> Cached(synced = result.lines.joinToString("\n") { "[${formatTag(it.timeMs)}]${it.text}" })
+                is Lyrics.Synced -> Cached(synced = result.lines.joinToString("\n", transform = ::formatLine))
                 is Lyrics.Plain -> Cached(plain = result.text)
                 Lyrics.Instrumental -> Cached(instrumental = true)
                 Lyrics.NotFound -> return
@@ -150,25 +154,68 @@ class LyricsRepository(
     companion object {
         private val timeTag = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
 
-        /** Parses LRC text ("[01:02.34] words") into lines sorted by time. */
+        private val wordTag = Regex("""<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>""")
+
+        /**
+         * Parses LRC text ("[01:02.34] words") into lines sorted by time. Enhanced LRC word
+         * times ("[01:02.34] <01:02.34> some <01:02.90> words <01:03.50>") become [LyricLine.words].
+         */
         fun parseLrc(lrc: String): List<LyricLine> {
             val lines = mutableListOf<LyricLine>()
             lrc.lineSequence().forEach { raw ->
                 val tags = timeTag.findAll(raw).toList()
                 if (tags.isEmpty()) return@forEach
-                val text = timeTag.replace(raw, "").trim()
+                val body = timeTag.replace(raw, "")
+                val words = if (tags.size == 1) parseWords(body) else emptyList()
+                val text = if (words.isNotEmpty()) words.joinToString("") { it.text } else wordTag.replace(body, "").trim()
                 tags.forEach { tag ->
-                    val (min, sec, frac) = tag.destructured
-                    val fracMs = when (frac.length) {
-                        0 -> 0L
-                        1 -> frac.toLong() * 100
-                        2 -> frac.toLong() * 10
-                        else -> frac.take(3).toLong()
-                    }
-                    lines += LyricLine(min.toLong() * 60_000 + sec.toLong() * 1000 + fracMs, text)
+                    lines += LyricLine(tagMs(tag), text, words)
                 }
             }
             return lines.sortedBy { it.timeMs }
+        }
+
+        /** Word-timed text, or empty if the line has no word times. An end of -1 means "until the next line". */
+        private fun parseWords(body: String): List<LyricWord> {
+            val tags = wordTag.findAll(body).toList()
+            if (tags.isEmpty()) return emptyList()
+            val words = mutableListOf<LyricWord>()
+            var spaceBefore = false
+            tags.forEachIndexed { i, tag ->
+                val segment = body.substring(tag.range.last + 1, tags.getOrNull(i + 1)?.range?.first ?: body.length)
+                val word = segment.trim()
+                if (word.isEmpty()) {
+                    if (segment.isNotEmpty()) spaceBefore = true
+                    return@forEachIndexed
+                }
+                if (words.isNotEmpty() && (spaceBefore || segment.first().isWhitespace())) {
+                    words[words.lastIndex] = words.last().let { it.copy(text = it.text + " ") }
+                }
+                val end = tags.getOrNull(i + 1)?.let(::tagMs) ?: -1L
+                words += LyricWord(tagMs(tag), end, word)
+                spaceBefore = segment.last().isWhitespace()
+            }
+            return words
+        }
+
+        private fun tagMs(tag: MatchResult): Long {
+            val (min, sec, frac) = tag.destructured
+            val fracMs = when (frac.length) {
+                0 -> 0L
+                1 -> frac.toLong() * 100
+                2 -> frac.toLong() * 10
+                else -> frac.take(3).toLong()
+            }
+            return min.toLong() * 60_000 + sec.toLong() * 1000 + fracMs
+        }
+
+        private fun formatLine(line: LyricLine): String {
+            if (line.words.isEmpty()) return "[${formatTag(line.timeMs)}]${line.text}"
+            return buildString {
+                append("[${formatTag(line.timeMs)}]")
+                line.words.forEach { append("<${formatTag(it.startMs)}>${it.text}") }
+                line.words.last().endMs.takeIf { it >= 0 }?.let { append("<${formatTag(it)}>") }
+            }
         }
 
         private fun formatTag(ms: Long) = "%02d:%02d.%02d".format(ms / 60_000, (ms / 1000) % 60, (ms % 1000) / 10)

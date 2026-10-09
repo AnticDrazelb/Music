@@ -73,7 +73,7 @@ class PlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        player = ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state))
+        player = ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state, container.karaoke.state))
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(music, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
@@ -86,7 +86,7 @@ class PlaybackService : MediaLibraryService() {
             createSecondary = {
                 // Only ever plays the outgoing song's last seconds; the main player keeps audio
                 // focus, the wake lock and the media session.
-                ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state))
+                ExoPlayer.Builder(this, EqualizerRenderersFactory(this, container.equalizer.state, container.karaoke.state))
                     .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                     .setAudioAttributes(music, /* handleAudioFocus = */ false)
                     .build()
