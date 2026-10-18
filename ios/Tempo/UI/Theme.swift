@@ -44,7 +44,7 @@ struct PodStyle {
                 shellEdge: Color(hex: 0xC9CACD),
                 wheel: [Color(hex: 0xE9EAEC), Color(hex: 0xD8DADD)],
                 wheelLabel: Color(hex: 0x9C9EA3),
-                wheelPressed: Color(hex: 0xD3D5D9),
+                wheelPressed: Color(hex: 0xC4C6CA),
                 center: [Color(hex: 0xFFFFFF), Color(hex: 0xEDEEF0)],
                 centerEdge: Color(hex: 0xB4B6BB)
             )
