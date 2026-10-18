@@ -1,8 +1,8 @@
-# Tempo for iPhone: iPod video edition
+# Tempo for iPhone: iPod classic edition
 
-Tempo on iOS looks and works like a 5th-generation iPod video. It has a glossy white or black
-body, the 4:3 colour screen with its silver title bar and blue selection bar, and a working
-click wheel. You search YouTube Music, download songs, and they go into your library for
+Tempo on iOS looks and works like an iPod classic. It has an anodized aluminium face in silver
+or black, the 4:3 colour screen with its silver title bar and blue selection bar, and a working
+click wheel that clicks, rocks and buzzes like the real one. You search YouTube Music, download songs, and they go into your library for
 offline listening.
 
 ## Using it
@@ -24,7 +24,7 @@ offline listening.
 - **Now Playing** shows the artwork with its reflection, the progress bar and the time left.
   Turn the wheel to change the volume. Press the center button to scrub through the song with
   the wheel.
-- **Settings**: Shuffle, Repeat, Body (White/Black), Clicker, Haptics, About, and Delete All
+- **Settings**: Shuffle, Repeat, Body (Silver/Black), Backlight, Clicker, Haptics, About, and Delete All
   Songs.
 - Music keeps playing in the background, with lock screen and Control Center controls.
 - Downloaded songs are in Files → On My iPhone → Tempo (as `.m4a`), along with the artwork.

@@ -166,7 +166,7 @@ extension Navigator {
                     player.repeatMode = all[(all.firstIndex(of: player.repeatMode)! + 1) % all.count]
                 }),
                 MenuItem(id: "body", title: "Body", detail: prefs.body.rawValue, chevron: false, action: { [unowned self] in
-                    withAnimation(.easeInOut(duration: 0.4)) { prefs.body = prefs.body == .white ? .black : .white }
+                    withAnimation(.easeInOut(duration: 0.4)) { prefs.body = prefs.body == .silver ? .black : .silver }
                 }),
                 MenuItem(id: "backlight", title: "Backlight", detail: prefs.backlight == 0 ? "Always On" : "\(prefs.backlight) Seconds",
                          chevron: false, action: { [unowned self] in

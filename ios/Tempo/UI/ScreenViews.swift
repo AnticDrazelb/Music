@@ -49,24 +49,22 @@ struct TitleBar: View {
     @StateObject private var battery = BatteryMonitor()
 
     var body: some View {
-        ZStack {
+        // The classic's title bar: title on the left, play state and battery on the right.
+        HStack(spacing: unit * 0.2) {
             Text(title)
-                .font(LCD.font(unit * 0.5, .bold))
+                .font(LCD.font(unit * 0.46, .bold))
                 .foregroundStyle(LCD.text)
                 .lineLimit(1)
-                .padding(.horizontal, unit * 1.6)
-            HStack {
-                if player.current != nil {
-                    Image(systemName: player.isPlaying ? "play.fill" : "pause.fill")
-                        .font(.system(size: unit * 0.36, weight: .bold))
-                        .foregroundStyle(Color(hex: 0x2E7BD6))
-                }
-                Spacer()
-                BatteryIcon(level: battery.level, charging: battery.charging)
-                    .frame(width: unit * 0.85, height: unit * 0.4)
+            Spacer(minLength: unit * 0.3)
+            if player.current != nil {
+                Image(systemName: player.isPlaying ? "play.fill" : "pause.fill")
+                    .font(.system(size: unit * 0.32, weight: .bold))
+                    .foregroundStyle(Color(hex: 0x2E7BD6))
             }
-            .padding(.horizontal, unit * 0.3)
+            BatteryIcon(level: battery.level, charging: battery.charging)
+                .frame(width: unit * 0.85, height: unit * 0.4)
         }
+        .padding(.horizontal, unit * 0.25)
         .frame(height: unit)
         .background(LCD.titleBar)
         .overlay(alignment: .bottom) { Rectangle().fill(LCD.titleBarLine).frame(height: 1) }

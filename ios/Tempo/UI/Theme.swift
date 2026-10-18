@@ -5,7 +5,7 @@ import SwiftUI
 final class Preferences: ObservableObject {
     static let shared = Preferences()
 
-    enum Body: String, CaseIterable { case white = "White", black = "Black" }
+    enum Body: String, CaseIterable { case silver = "Silver", black = "Black" }
 
     @Published var body: Body { didSet { defaults.set(body.rawValue, forKey: "body") } }
     @Published var clicker: Bool { didSet { defaults.set(clicker, forKey: "clicker") } }
@@ -17,7 +17,7 @@ final class Preferences: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        body = Body(rawValue: defaults.string(forKey: "body") ?? "") ?? .white
+        body = Body(rawValue: defaults.string(forKey: "body") ?? "") ?? .silver
         clicker = defaults.object(forKey: "clicker") as? Bool ?? true
         haptics = defaults.object(forKey: "haptics") as? Bool ?? true
         backlight = defaults.object(forKey: "backlight") as? Int ?? 20
@@ -30,40 +30,42 @@ extension Color {
     }
 }
 
-/// The colours of an iPod video (5th generation), white or black.
+/// The colours of an iPod classic: anodized aluminium in silver or black.
 struct PodStyle {
     let dark: Bool
+    /// The aluminium face, top to bottom.
     let shell: [Color]
     let shellEdge: Color
     let wheel: [Color]
     let wheelLabel: Color
     let wheelPressed: Color
+    /// The center button is aluminium too, matching the face.
     let center: [Color]
     let centerEdge: Color
 
     static func of(_ body: Preferences.Body) -> PodStyle {
         switch body {
-        case .white:
+        case .silver:
             return PodStyle(
                 dark: false,
-                shell: [Color(hex: 0xFDFDFD), Color(hex: 0xF1F1F3), Color(hex: 0xE2E3E6)],
-                shellEdge: Color(hex: 0xC9CACD),
-                wheel: [Color(hex: 0xE9EAEC), Color(hex: 0xD8DADD)],
-                wheelLabel: Color(hex: 0x9C9EA3),
-                wheelPressed: Color(hex: 0xC4C6CA),
-                center: [Color(hex: 0xFFFFFF), Color(hex: 0xEDEEF0)],
-                centerEdge: Color(hex: 0xB4B6BB)
+                shell: [Color(hex: 0xE2E3E5), Color(hex: 0xD3D4D7), Color(hex: 0xC4C6C9)],
+                shellEdge: Color(hex: 0xA9ACB0),
+                wheel: [Color(hex: 0xFCFCFC), Color(hex: 0xEEEEEF)],
+                wheelLabel: Color(hex: 0xB3B5B9),
+                wheelPressed: Color(hex: 0xD6D7D9),
+                center: [Color(hex: 0xDADBDD), Color(hex: 0xC2C4C7)],
+                centerEdge: Color(hex: 0xA7AAAE)
             )
         case .black:
             return PodStyle(
                 dark: true,
-                shell: [Color(hex: 0x3A3A3D), Color(hex: 0x1B1B1D), Color(hex: 0x0B0B0C)],
-                shellEdge: Color(hex: 0x050505),
-                wheel: [Color(hex: 0x2E2F31), Color(hex: 0x1D1E20)],
-                wheelLabel: Color(hex: 0xB8B9BC),
-                wheelPressed: Color(hex: 0x3D3E41),
-                center: [Color(hex: 0x1A1A1C), Color(hex: 0x0D0D0E)],
-                centerEdge: Color(hex: 0x3A3B3E)
+                shell: [Color(hex: 0x38393C), Color(hex: 0x2A2B2E), Color(hex: 0x1D1E20)],
+                shellEdge: Color(hex: 0x0C0C0D),
+                wheel: [Color(hex: 0x1B1B1C), Color(hex: 0x0C0C0D)],
+                wheelLabel: Color(hex: 0x66676B),
+                wheelPressed: Color(hex: 0x2A2A2C),
+                center: [Color(hex: 0x3A3B3E), Color(hex: 0x26272A)],
+                centerEdge: Color(hex: 0x131314)
             )
         }
     }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The whole iPod video: a glossy shell, the 4:3 screen up top and the click wheel below.
+/// The whole iPod classic: an aluminium face, the 4:3 screen up top and the click wheel below.
 struct IPodView: View {
     @StateObject private var navigator = Navigator()
     @EnvironmentObject var prefs: Preferences
@@ -72,7 +72,7 @@ struct IPodView: View {
     }
 
     private func bezel(width: CGFloat, height: CGFloat) -> some View {
-        let border = width * 0.035
+        let border = width * 0.026
         return ScreenView(navigator: navigator)
             .frame(width: width - border * 2, height: height - border * 2)
             .overlay(ScreenGlass(dimmed: !lit))
@@ -89,6 +89,7 @@ struct IPodView: View {
     private func shell(_ style: PodStyle) -> some View {
         ZStack {
             LinearGradient(colors: style.shell, startPoint: .top, endPoint: .bottom)
+            AluminiumGrain(dark: style.dark)
             BodyGloss(dark: style.dark)
         }
     }

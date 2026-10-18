@@ -62,7 +62,7 @@ struct ClickWheel: View {
         ZStack {
             Circle()
                 .fill(LinearGradient(colors: style.wheel, startPoint: .top, endPoint: .bottom))
-            // Matte plastic: a soft highlight from above, darker toward the rim.
+            // A soft highlight from above, darker toward the rim.
             Circle()
                 .fill(RadialGradient(colors: [.white.opacity(isDark ? 0.06 : 0.35), .clear],
                                      center: UnitPoint(x: 0.5, y: 0.25), startRadius: 0, endRadius: diameter * 0.6))
@@ -131,10 +131,12 @@ struct ClickWheel: View {
             Circle()
                 .fill(LinearGradient(colors: centerPressed ? style.center.reversed() : style.center,
                                      startPoint: .top, endPoint: .bottom))
-            // Its domed top catches the light.
+            // A soft sheen on the metal.
             Circle()
-                .fill(RadialGradient(colors: [.white.opacity(centerPressed ? 0 : (isDark ? 0.12 : 0.9)), .clear],
+                .fill(RadialGradient(colors: [.white.opacity(centerPressed ? 0 : (isDark ? 0.08 : 0.4)), .clear],
                                      center: UnitPoint(x: 0.5, y: 0.2), startRadius: 0, endRadius: d * 0.55))
+            // Bead-blasted aluminium, like the face.
+            AluminiumGrain(dark: isDark).clipShape(Circle())
             Circle()
                 .strokeBorder(LinearGradient(colors: [.white.opacity(isDark ? 0.15 : 0.95), style.centerEdge],
                                              startPoint: .top, endPoint: .bottom), lineWidth: 1)

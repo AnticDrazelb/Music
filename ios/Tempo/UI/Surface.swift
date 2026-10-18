@@ -40,7 +40,7 @@ final class Tilt: ObservableObject {
     }
 }
 
-/// The polished plastic front: a broad, soft reflection of the room that slides as the phone tilts.
+/// The anodized aluminium face: a broad, diffuse sheen that slides as the phone tilts.
 struct BodyGloss: View {
     let dark: Bool
     @ObservedObject var tilt = Tilt.shared
@@ -52,14 +52,14 @@ struct BodyGloss: View {
             LinearGradient(
                 stops: [
                     .init(color: .white.opacity(0), location: 0),
-                    .init(color: .white.opacity(dark ? 0.10 : 0.55), location: 0.42),
+                    .init(color: .white.opacity(dark ? 0.09 : 0.32), location: 0.42),
                     .init(color: .white.opacity(0), location: 0.62),
                 ],
                 startPoint: UnitPoint(x: -0.2 + shift, y: -0.1 + lift),
                 endPoint: UnitPoint(x: 1.2 + shift, y: 0.9 + lift))
             .blendMode(dark ? .screen : .softLight)
             // Light from overhead on the top of the case.
-            LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.4), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))
+            LinearGradient(colors: [.white.opacity(dark ? 0.08 : 0.25), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))
         }
         .allowsHitTesting(false)
     }
@@ -71,7 +71,7 @@ struct CaseEdges: View {
 
     var body: some View {
         ZStack {
-            // Falloff as the plastic curves away.
+            // Falloff as the face curves away.
             RoundedRectangle(cornerRadius: 48, style: .continuous)
                 .strokeBorder(Color.black.opacity(dark ? 0.7 : 0.12), lineWidth: 14)
                 .blur(radius: 10)
@@ -120,5 +120,32 @@ struct ScreenGlass: View {
         }
         .animation(.easeInOut(duration: 0.5), value: dimmed)
         .allowsHitTesting(false)
+    }
+}
+
+/// The fine speckle of bead-blasted, anodized aluminium.
+struct AluminiumGrain: View {
+    let dark: Bool
+
+    private static let tile: UIImage = {
+        let size = 128
+        var generator = SystemRandomNumberGenerator()
+        return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { context in
+            for y in 0..<size {
+                for x in 0..<size {
+                    let v = CGFloat.random(in: 0...1, using: &generator)
+                    context.cgContext.setFillColor(UIColor(white: v, alpha: 1).cgColor)
+                    context.cgContext.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+    }()
+
+    var body: some View {
+        Image(uiImage: Self.tile)
+            .resizable(resizingMode: .tile)
+            .blendMode(.overlay)
+            .opacity(dark ? 0.06 : 0.09)
+            .allowsHitTesting(false)
     }
 }
