@@ -37,8 +37,8 @@ struct ClickWheel: View {
         ZStack {
             Circle()
                 .fill(LinearGradient(colors: style.wheel, startPoint: .top, endPoint: .bottom))
-                .overlay(Circle().stroke(style.centerEdge.opacity(0.5), lineWidth: 1))
-                .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
+                .overlay(Circle().stroke(style.centerEdge.opacity(0.8), lineWidth: 1))
+                .shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
             if let pressed {
                 Circle()
                     .trim(from: 0, to: 0.25)

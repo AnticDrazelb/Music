@@ -42,11 +42,11 @@ struct PodStyle {
             return PodStyle(
                 shell: [Color(hex: 0xFDFDFD), Color(hex: 0xF1F1F3), Color(hex: 0xE2E3E6)],
                 shellEdge: Color(hex: 0xC9CACD),
-                wheel: [Color(hex: 0xF4F4F5), Color(hex: 0xE3E4E6)],
-                wheelLabel: Color(hex: 0xA9ABB0),
+                wheel: [Color(hex: 0xE9EAEC), Color(hex: 0xD8DADD)],
+                wheelLabel: Color(hex: 0x9C9EA3),
                 wheelPressed: Color(hex: 0xD3D5D9),
                 center: [Color(hex: 0xFFFFFF), Color(hex: 0xEDEEF0)],
-                centerEdge: Color(hex: 0xC2C4C8)
+                centerEdge: Color(hex: 0xB4B6BB)
             )
         case .black:
             return PodStyle(

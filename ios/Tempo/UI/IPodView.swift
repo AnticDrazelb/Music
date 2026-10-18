@@ -42,6 +42,12 @@ struct IPodView: View {
             navigator.push(page)
         case "settings": navigator.push(navigator.settingsPage())
         case "results": navigator.runSearch("Bohemian Rhapsody")
+        case "nowplaying":
+            Task {
+                guard let first = try? await YouTube.shared.searchSongs("Daft Punk One More Time").first else { return }
+                navigator.player.play([first])
+                navigator.push(navigator.nowPlayingPage())
+            }
         default: break
         }
     }
