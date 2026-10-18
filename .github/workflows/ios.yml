@@ -38,7 +38,7 @@ jobs:
           xcrun simctl bootstatus "$DEVICE"
           xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Tempo.app
           mkdir -p screenshots
-          for screen in main music search results settings nowplaying; do
+          for screen in main music search results settings nowplaying black; do
             xcrun simctl terminate "$DEVICE" app.tempo.pod || true
             SIMCTL_CHILD_TEMPO_SCREEN=$screen xcrun simctl launch "$DEVICE" app.tempo.pod
             sleep 10

@@ -10,6 +10,9 @@ final class Preferences: ObservableObject {
     @Published var body: Body { didSet { defaults.set(body.rawValue, forKey: "body") } }
     @Published var clicker: Bool { didSet { defaults.set(clicker, forKey: "clicker") } }
     @Published var haptics: Bool { didSet { defaults.set(haptics, forKey: "haptics") } }
+    /// Seconds before the backlight goes off; 0 keeps it on.
+    @Published var backlight: Int { didSet { defaults.set(backlight, forKey: "backlight") } }
+    static let backlightChoices = [10, 20, 30, 60, 0]
 
     private let defaults = UserDefaults.standard
 
@@ -17,6 +20,7 @@ final class Preferences: ObservableObject {
         body = Body(rawValue: defaults.string(forKey: "body") ?? "") ?? .white
         clicker = defaults.object(forKey: "clicker") as? Bool ?? true
         haptics = defaults.object(forKey: "haptics") as? Bool ?? true
+        backlight = defaults.object(forKey: "backlight") as? Int ?? 20
     }
 }
 
@@ -28,6 +32,7 @@ extension Color {
 
 /// The colours of an iPod video (5th generation), white or black.
 struct PodStyle {
+    let dark: Bool
     let shell: [Color]
     let shellEdge: Color
     let wheel: [Color]
@@ -40,6 +45,7 @@ struct PodStyle {
         switch body {
         case .white:
             return PodStyle(
+                dark: false,
                 shell: [Color(hex: 0xFDFDFD), Color(hex: 0xF1F1F3), Color(hex: 0xE2E3E6)],
                 shellEdge: Color(hex: 0xC9CACD),
                 wheel: [Color(hex: 0xE9EAEC), Color(hex: 0xD8DADD)],
@@ -50,6 +56,7 @@ struct PodStyle {
             )
         case .black:
             return PodStyle(
+                dark: true,
                 shell: [Color(hex: 0x3A3A3D), Color(hex: 0x1B1B1D), Color(hex: 0x0B0B0C)],
                 shellEdge: Color(hex: 0x050505),
                 wheel: [Color(hex: 0x2E2F31), Color(hex: 0x1D1E20)],

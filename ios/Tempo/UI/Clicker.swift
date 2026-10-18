@@ -1,54 +1,121 @@
-import AVFoundation
+import AudioToolbox
+import CoreHaptics
 import UIKit
 
-/// The click wheel's tick: a tiny synthesized click through the speaker, plus a light haptic.
+/// The iPod's clicker and the feel of its buttons. Scrolling makes a short, high tick. Pressing
+/// a button is a firmer "click" as the dome switch goes down and a lighter "clack" as it comes
+/// back up. Sounds are system sounds, so they play straight away, mix with music and respect the
+/// silent switch. Haptics use Core Haptics where the phone has it.
 @MainActor
 final class Clicker {
     static let shared = Clicker()
 
-    private var players: [AVAudioPlayer] = []
-    private var next = 0
-    private let tick = UISelectionFeedbackGenerator()
-    private let press = UIImpactFeedbackGenerator(style: .medium)
+    private var tickSound: SystemSoundID = 0
+    private var downSound: SystemSoundID = 0
+    private var upSound: SystemSoundID = 0
+
+    private var engine: CHHapticEngine?
+    private var tickPattern: CHHapticPattern?
+    private var downPattern: CHHapticPattern?
+    private var upPattern: CHHapticPattern?
+    private var holdPattern: CHHapticPattern?
+    private let fallbackTick = UISelectionFeedbackGenerator()
+    private let fallbackPress = UIImpactFeedbackGenerator(style: .rigid)
 
     init() {
-        let data = Self.clickWAV()
-        players = (0..<4).compactMap { _ in
-            let player = try? AVAudioPlayer(data: data)
-            player?.volume = 0.35
-            player?.prepareToPlay()
-            return player
+        tickSound = Self.makeSound("tick", Self.clickWAV(milliseconds: 4, pitch: 4_200, decay: 11, noise: 0.35))
+        downSound = Self.makeSound("down", Self.clickWAV(milliseconds: 9, pitch: 2_400, decay: 6, noise: 0.5))
+        upSound = Self.makeSound("up", Self.clickWAV(milliseconds: 5, pitch: 3_300, decay: 9, noise: 0.3, gain: 0.55))
+        setUpHaptics()
+    }
+
+    /// One step of the wheel.
+    func scrollTick() {
+        if Preferences.shared.clicker { AudioServicesPlaySystemSound(tickSound) }
+        if Preferences.shared.haptics { play(tickPattern) { fallbackTick.selectionChanged() } }
+    }
+
+    /// A button going down under the finger.
+    func buttonDown() {
+        if Preferences.shared.clicker { AudioServicesPlaySystemSound(downSound) }
+        if Preferences.shared.haptics { play(downPattern) { fallbackPress.impactOccurred(intensity: 0.9) } }
+    }
+
+    /// The button springing back.
+    func buttonUp() {
+        if Preferences.shared.clicker { AudioServicesPlaySystemSound(upSound) }
+        if Preferences.shared.haptics { play(upPattern) { fallbackPress.impactOccurred(intensity: 0.4) } }
+    }
+
+    /// A full press, for taps on the screen.
+    func buttonPress() {
+        buttonDown()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) { self.buttonUp() }
+    }
+
+    /// Held long enough: a deeper double pulse.
+    func hold() {
+        if Preferences.shared.haptics { play(holdPattern) { fallbackPress.impactOccurred(intensity: 1) } }
+    }
+
+    // MARK: Haptics
+
+    private func setUpHaptics() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
+              let engine = try? CHHapticEngine() else { return }
+        engine.playsHapticsOnly = true
+        engine.isAutoShutdownEnabled = true
+        engine.resetHandler = { [weak engine] in try? engine?.start() }
+        self.engine = engine
+        try? engine.start()
+
+        func transient(_ intensity: Float, _ sharpness: Float, at time: TimeInterval = 0) -> CHHapticEvent {
+            CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
+            ], relativeTime: time)
+        }
+        tickPattern = try? CHHapticPattern(events: [transient(0.42, 0.95)], parameters: [])
+        downPattern = try? CHHapticPattern(events: [transient(0.95, 0.55)], parameters: [])
+        upPattern = try? CHHapticPattern(events: [transient(0.38, 0.85)], parameters: [])
+        holdPattern = try? CHHapticPattern(events: [transient(0.8, 0.3), transient(1, 0.4, at: 0.09)], parameters: [])
+    }
+
+    private func play(_ pattern: CHHapticPattern?, fallback: () -> Void) {
+        guard let engine, let pattern, let player = try? engine.makePlayer(with: pattern) else {
+            fallback()
+            return
+        }
+        do {
+            try player.start(atTime: CHHapticTimeImmediate)
+        } catch {
+            // The engine stops when the app is in the background; start it again.
+            try? engine.start()
+            try? player.start(atTime: CHHapticTimeImmediate)
         }
     }
 
-    func scrollTick() {
-        if Preferences.shared.clicker { playClick() }
-        if Preferences.shared.haptics { tick.selectionChanged() }
+    // MARK: Sounds
+
+    private static func makeSound(_ name: String, _ data: Data) -> SystemSoundID {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("clicker-\(name).wav")
+        try? data.write(to: url, options: .atomic)
+        var id: SystemSoundID = 0
+        AudioServicesCreateSystemSoundID(url as CFURL, &id)
+        return id
     }
 
-    func buttonPress() {
-        if Preferences.shared.clicker { playClick() }
-        if Preferences.shared.haptics { press.impactOccurred(intensity: 0.7) }
-    }
-
-    private func playClick() {
-        guard !players.isEmpty else { return }
-        let player = players[next]
-        next = (next + 1) % players.count
-        player.currentTime = 0
-        player.play()
-    }
-
-    /// A 6 ms decaying click as a 16-bit mono WAV.
-    private static func clickWAV() -> Data {
+    /// A short decaying click, like the iPod's piezo, as a 16-bit mono WAV.
+    static func clickWAV(milliseconds: Int, pitch: Double, decay: Double, noise: Double, gain: Double = 1) -> Data {
         let rate = 44_100
-        let count = rate * 6 / 1000
-        var samples = [Int16](repeating: 0, count: count)
-        for i in 0..<count {
+        let count = rate * milliseconds / 1000
+        var generator = SystemRandomNumberGenerator()
+        let samples: [Int16] = (0..<count).map { i in
             let t = Double(i) / Double(count)
-            let envelope = exp(-t * 7)
-            let tone = sin(Double(i) * 2 * .pi * 3_200 / Double(rate)) * 0.6 + Double.random(in: -0.4...0.4)
-            samples[i] = Int16(max(-1, min(1, tone * envelope)) * Double(Int16.max))
+            let envelope = exp(-t * decay) * min(1, Double(i) / 12)
+            let tone = sin(Double(i) * 2 * .pi * pitch / Double(rate)) * (1 - noise)
+            let hiss = Double.random(in: -1...1, using: &generator) * noise
+            return Int16(max(-1, min(1, (tone + hiss) * envelope * gain * 0.8)) * Double(Int16.max))
         }
         var data = Data()
         func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }

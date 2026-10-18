@@ -4,6 +4,10 @@ import SwiftUI
 struct IPodView: View {
     @StateObject private var navigator = Navigator()
     @EnvironmentObject var prefs: Preferences
+    @Environment(\.scenePhase) private var scenePhase
+    /// The backlight: goes off after a while with nothing touched, like the iPod's.
+    @State private var lit = true
+    @State private var backlightTimer: Task<Void, Never>?
 
     var body: some View {
         let style = PodStyle.of(prefs.body)
@@ -19,14 +23,28 @@ struct IPodView: View {
                 Spacer(minLength: margin * 0.6)
                 bezel(width: screenWidth, height: screenHeight)
                 Spacer(minLength: margin)
-                ClickWheel(diameter: wheel, style: style) { navigator.handle($0) }
+                ClickWheel(diameter: wheel, style: style) { event in
+                    wake()
+                    navigator.handle(event)
+                }
                 Spacer(minLength: margin)
             }
             .frame(width: width)
         }
         .background(shell(style).ignoresSafeArea())
+        .overlay(CaseEdges(dark: style.dark).ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
-        .onAppear(perform: openScreenForScreenshots)
+        // Any touch turns the backlight back on.
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in wake() })
+        .onAppear {
+            openScreenForScreenshots()
+            Tilt.shared.start()
+            wake()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Tilt.shared.start(); wake() } else { Tilt.shared.stop() }
+        }
+        .onChange(of: prefs.backlight) { _, _ in wake() }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
     }
@@ -41,6 +59,7 @@ struct IPodView: View {
             page.letterIndex = 20
             navigator.push(page)
         case "settings": navigator.push(navigator.settingsPage())
+        case "black": prefs.body = .black
         case "results": navigator.runSearch("Bohemian Rhapsody")
         case "nowplaying":
             Task {
@@ -56,12 +75,8 @@ struct IPodView: View {
         let border = width * 0.035
         return ScreenView(navigator: navigator)
             .frame(width: width - border * 2, height: height - border * 2)
+            .overlay(ScreenGlass(dimmed: !lit))
             .clipShape(RoundedRectangle(cornerRadius: 3))
-            .overlay {
-                // A faint sheen across the plastic over the LCD.
-                LinearGradient(colors: [.white.opacity(0.18), .clear, .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .allowsHitTesting(false)
-            }
             .padding(border)
             .background(
                 RoundedRectangle(cornerRadius: width * 0.03)
@@ -74,9 +89,19 @@ struct IPodView: View {
     private func shell(_ style: PodStyle) -> some View {
         ZStack {
             LinearGradient(colors: style.shell, startPoint: .top, endPoint: .bottom)
-            // The polished front catches the light from above.
-            LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center)
-                .blendMode(.softLight)
+            BodyGloss(dark: style.dark)
+        }
+    }
+
+    private func wake() {
+        if !lit { withAnimation(.easeOut(duration: 0.15)) { lit = true } }
+        backlightTimer?.cancel()
+        let seconds = prefs.backlight
+        guard seconds > 0 else { return }
+        backlightTimer = Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.8)) { lit = false }
         }
     }
 }

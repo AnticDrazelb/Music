@@ -184,13 +184,20 @@ final class Navigator: ObservableObject {
         case .scroll(let step):
             if page.mode == .scrub {
                 let stride = max(2, player.duration / 120)
-                player.seek(to: player.currentTime + Double(step) * stride)
+                let target = max(0, min(player.duration, player.currentTime + Double(step) * stride))
+                if target != player.currentTime {
+                    player.seek(to: target)
+                    Clicker.shared.scrollTick()
+                }
             } else {
+                // Like the iPod, no click once the volume is all the way up or down.
                 let new = max(0, min(1, player.volume + Float(step) * 0.04))
-                if new != player.volume { player.volume = new }
+                if new != player.volume {
+                    player.volume = new
+                    Clicker.shared.scrollTick()
+                }
                 page.mode = .volume
             }
-            Clicker.shared.scrollTick()
             resetModeLater(page)
         case .select:
             page.mode = page.mode == .scrub ? .progress : .scrub

@@ -168,6 +168,11 @@ extension Navigator {
                 MenuItem(id: "body", title: "Body", detail: prefs.body.rawValue, chevron: false, action: { [unowned self] in
                     withAnimation(.easeInOut(duration: 0.4)) { prefs.body = prefs.body == .white ? .black : .white }
                 }),
+                MenuItem(id: "backlight", title: "Backlight", detail: prefs.backlight == 0 ? "Always On" : "\(prefs.backlight) Seconds",
+                         chevron: false, action: { [unowned self] in
+                    let all = Preferences.backlightChoices
+                    prefs.backlight = all[((all.firstIndex(of: prefs.backlight) ?? 0) + 1) % all.count]
+                }),
                 MenuItem(id: "clicker", title: "Clicker", detail: prefs.clicker ? "On" : "Off", chevron: false,
                          action: { [unowned self] in prefs.clicker.toggle() }),
                 MenuItem(id: "haptics", title: "Haptics", detail: prefs.haptics ? "On" : "Off", chevron: false,
