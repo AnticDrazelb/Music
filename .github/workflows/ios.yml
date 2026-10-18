@@ -1,0 +1,52 @@
+name: Build iOS
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+    tags: ["ios-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Unit tests
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" -quiet
+
+      - name: Build unsigned IPA
+        run: |
+          xcodebuild archive -project Tempo.xcodeproj -scheme Tempo -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/Tempo.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -quiet
+          VERSION=$(grep -oE 'MARKETING_VERSION: "[^"]+"' project.yml | cut -d'"' -f2)
+          mkdir -p build/Payload
+          cp -R build/Tempo.xcarchive/Products/Applications/Tempo.app build/Payload/
+          (cd build && zip -qry "Tempo-iPod-$VERSION.ipa" Payload)
+          echo "IPA=ios/build/Tempo-iPod-$VERSION.ipa" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tempo-iPod-ipa
+          path: ${{ env.IPA }}
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.IPA }}

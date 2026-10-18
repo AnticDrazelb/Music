@@ -15,3 +15,5 @@ keystore.properties
 !signing/keystore.properties
 app/screenshots/
 *.apk
+ios/Tempo.xcodeproj/
+ios/build/
