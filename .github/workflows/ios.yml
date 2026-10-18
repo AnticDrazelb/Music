@@ -29,6 +29,32 @@ jobs:
           DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
           xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" -quiet
 
+      - name: Simulator screenshots
+        continue-on-error: true
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcodebuild build -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" -derivedDataPath build/sim -quiet
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE"
+          xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Tempo.app
+          mkdir -p screenshots
+          for screen in main music search results settings; do
+            xcrun simctl terminate "$DEVICE" app.tempo.pod || true
+            SIMCTL_CHILD_TEMPO_SCREEN=$screen xcrun simctl launch "$DEVICE" app.tempo.pod
+            sleep 6
+            xcrun simctl io "$DEVICE" screenshot "screenshots/$screen.png"
+          done
+
+      - name: Publish screenshots branch
+        if: github.ref_type == 'branch'
+        continue-on-error: true
+        run: |
+          cd screenshots
+          git init -q -b ios-screenshots
+          git add .
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ios-screenshots
+
       - name: Build unsigned IPA
         run: |
           xcodebuild archive -project Tempo.xcodeproj -scheme Tempo -configuration Release \

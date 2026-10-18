@@ -26,8 +26,24 @@ struct IPodView: View {
         }
         .background(shell(style).ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
+        .onAppear(perform: openScreenForScreenshots)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+    }
+
+    /// CI screenshots set TEMPO_SCREEN to open a page at launch.
+    private func openScreenForScreenshots() {
+        switch ProcessInfo.processInfo.environment["TEMPO_SCREEN"] {
+        case "music": navigator.push(navigator.musicPage())
+        case "search":
+            let page = navigator.searchPage()
+            page.query = "Daft p"
+            page.letterIndex = 20
+            navigator.push(page)
+        case "settings": navigator.push(navigator.settingsPage())
+        case "results": navigator.runSearch("Bohemian Rhapsody")
+        default: break
+        }
     }
 
     private func bezel(width: CGFloat, height: CGFloat) -> some View {
