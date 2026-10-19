@@ -182,7 +182,7 @@ final class AudioPlayer: ObservableObject {
         isLoading = true
         loadTask = Task { [weak self] in
             do {
-                let stream = try await YouTube.shared.stream(for: track.id, allowHLS: true)
+                let stream = try await YouTube.shared.playableStream(for: track.id)
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
                 let asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
                 self.isLoading = false

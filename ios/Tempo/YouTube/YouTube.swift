@@ -5,13 +5,15 @@ enum YouTubeError: LocalizedError {
     case http(Int)
     case unplayable(String)
     case noAudio
+    case allFailed([String])
 
     var errorDescription: String? {
         switch self {
         case .unexpectedResponse: return "YouTube sent something unexpected"
-        case .http(let code): return "YouTube is unavailable (HTTP \(code))"
+        case .http(let code): return "YouTube refused the request (HTTP \(code))"
         case .unplayable(let reason): return reason
         case .noAudio: return "No downloadable audio for this song"
+        case .allFailed(let notes): return notes.isEmpty ? "No playable audio for this song" : notes.joined(separator: "\n")
         }
     }
 }
@@ -22,8 +24,17 @@ struct ResolvedStream {
     let mimeType: String
     let contentLength: Int64?
     let headers: [String: String]
-    /// True for an HLS manifest: it plays but can't be saved as one file.
+    /// True for an HLS manifest (a playlist of short segments).
     let isHLS: Bool
+    /// Which YouTube client handed it out, for error messages.
+    let client: String
+
+    /// The same direct stream limited to a byte range, the way YouTube's apps fetch it.
+    func rangeURL(_ start: Int64, _ end: Int64) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "range", value: "\(start)-\(end)")]
+        return components.url!
+    }
 }
 
 /// YouTube Music's own web API (InnerTube): search through the WEB_REMIX client, and audio
@@ -121,34 +132,66 @@ actor YouTube {
         ),
     ]
 
-    /// The best AAC (m4a) audio stream for a video. AVPlayer can't play YouTube's Opus/WebM, so
-    /// only MP4 audio is used; an HLS manifest is the last resort, for playback only.
-    func stream(for videoId: String, allowHLS: Bool) async throws -> ResolvedStream {
+    /// Every way YouTube offers this song's audio, best first: each client's direct AAC (m4a)
+    /// stream, then the iOS client's HLS stream. AVPlayer can't play YouTube's Opus/WebM, so
+    /// only AAC is used. Direct links are sometimes refused when fetched (HTTP 403) even
+    /// though the lookup worked, so callers try them in turn.
+    func candidates(for videoId: String) async throws -> [ResolvedStream] {
         if visitorData == nil { _ = try? await musicPost("search", ["query": "music"]) }
-        var lastError: Error = YouTubeError.noAudio
-        var hlsFallback: ResolvedStream?
+        var direct: [ResolvedStream] = []
+        var hls: [ResolvedStream] = []
+        var notes: [String] = []
+        var unplayable: String?
         for client in Self.clients {
             do {
                 let root = try await player(videoId, client: client)
                 let status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
                 guard status == "OK" else {
-                    let reason = JSONTree.string(root, "playabilityStatus", "reason") ?? "This song can't be played"
-                    lastError = YouTubeError.unplayable(friendly(reason))
+                    let reason = friendly(JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played")
+                    if status != "LOGIN_REQUIRED" { unplayable = unplayable ?? reason }
+                    notes.append("\(client.name): \(reason)")
                     continue
                 }
-                if let stream = Self.bestAudio(in: root, userAgent: client.userAgent) { return stream }
-                if hlsFallback == nil,
-                   let hls = JSONTree.string(root, "streamingData", "hlsManifestUrl"),
-                   let url = URL(string: hls) {
-                    hlsFallback = ResolvedStream(url: url, mimeType: "application/x-mpegURL", contentLength: nil,
-                                                 headers: ["User-Agent": client.userAgent], isHLS: true)
+                let audio = Self.bestAudio(in: root, client: client)
+                if let audio { direct.append(audio) }
+                let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:))
+                if let manifest {
+                    hls.append(ResolvedStream(url: manifest, mimeType: "application/x-mpegURL", contentLength: nil,
+                                              headers: ["User-Agent": client.userAgent], isHLS: true, client: client.name))
                 }
+                if audio == nil && manifest == nil { notes.append("\(client.name): no AAC audio") }
             } catch {
-                lastError = error
+                notes.append("\(client.name): \(error.localizedDescription)")
             }
         }
-        if allowHLS, let hlsFallback { return hlsFallback }
-        throw lastError
+        let all = direct + hls
+        if all.isEmpty {
+            if let unplayable { throw YouTubeError.unplayable(unplayable) }
+            throw YouTubeError.allFailed(notes)
+        }
+        return all
+    }
+
+    /// A stream to play now: the first direct link that answers, else HLS (AVPlayer plays it natively).
+    func playableStream(for videoId: String) async throws -> ResolvedStream {
+        let all = try await candidates(for: videoId)
+        var notes: [String] = []
+        for stream in all {
+            if stream.isHLS { return stream }
+            let status = await probe(stream)
+            if (200..<300).contains(status) { return stream }
+            notes.append("\(stream.client): audio refused (HTTP \(status))")
+        }
+        throw YouTubeError.allFailed(notes)
+    }
+
+    /// Fetches the first kilobyte of a direct stream; returns the HTTP status (0 if unreachable).
+    func probe(_ stream: ResolvedStream) async -> Int {
+        var request = URLRequest(url: stream.rangeURL(0, 1023))
+        stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        request.timeoutInterval = 12
+        guard let (_, response) = try? await session.data(for: request) else { return 0 }
+        return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
 
     private func player(_ videoId: String, client: Client) async throws -> JSONTree.Object {
@@ -176,7 +219,7 @@ actor YouTube {
         return try JSONTree.parse(data)
     }
 
-    static func bestAudio(in root: JSONTree.Object, userAgent: String) -> ResolvedStream? {
+    static func bestAudio(in root: JSONTree.Object, client: Client) -> ResolvedStream? {
         let formats = JSONTree.array(JSONTree.path(root, "streamingData", "adaptiveFormats")).compactMap { $0 as? JSONTree.Object }
         let candidates = formats.filter { format in
             guard let mime = format["mimeType"] as? String, mime.hasPrefix("audio/mp4"), format["url"] is String else { return false }
@@ -189,7 +232,7 @@ actor YouTube {
               let urlString = best["url"] as? String, let url = URL(string: urlString) else { return nil }
         let length = (best["contentLength"] as? String).flatMap { Int64($0) }
         return ResolvedStream(url: url, mimeType: best["mimeType"] as? String ?? "audio/mp4", contentLength: length,
-                              headers: ["User-Agent": userAgent], isHLS: false)
+                              headers: ["User-Agent": client.userAgent], isHLS: false, client: client.name)
     }
 
     private func friendly(_ reason: String) -> String {

@@ -71,16 +71,8 @@ final class DownloadManager: ObservableObject {
         defer { UIApplication.shared.endBackgroundTask(background) }
         states[track.id] = .downloading(0)
         do {
-            let stream = try await YouTube.shared.stream(for: track.id, allowHLS: false)
-            let fileName = "\(track.id).m4a"
-            let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
-            try await fetch(stream, to: temp) { [weak self] fraction in
-                self?.states[track.id] = .downloading(fraction)
-            }
+            let fileName = try await saveAudio(of: track)
             try Task.checkCancellation()
-            let destination = library.musicFolder.appendingPathComponent(fileName)
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temp, to: destination)
 
             var saved = track
             saved.fileName = fileName
@@ -97,6 +89,40 @@ final class DownloadManager: ObservableObject {
         }
     }
 
+    /// Tries each way YouTube offers the song until one downloads: a direct AAC file (checked
+    /// first, since YouTube sometimes refuses them with HTTP 403), then the HLS stream.
+    private func saveAudio(of track: Track) async throws -> String {
+        let progress: @MainActor (Double) -> Void = { [weak self] fraction in
+            self?.states[track.id] = .downloading(fraction)
+        }
+        var notes: [String] = []
+        for stream in try await YouTube.shared.candidates(for: track.id) {
+            try Task.checkCancellation()
+            do {
+                if stream.isHLS {
+                    return try await HLSDownloader.download(stream, name: track.id, to: library.musicFolder, progress: progress)
+                }
+                let status = await YouTube.shared.probe(stream)
+                guard (200..<300).contains(status) else {
+                    notes.append("\(stream.client): audio refused (HTTP \(status))")
+                    continue
+                }
+                let fileName = "\(track.id).m4a"
+                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+                try await fetch(stream, to: temp, progress: progress)
+                let destination = library.musicFolder.appendingPathComponent(fileName)
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: temp, to: destination)
+                return fileName
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                notes.append("\(stream.client)\(stream.isHLS ? " HLS" : ""): \(error.localizedDescription)")
+            }
+        }
+        throw YouTubeError.allFailed(notes)
+    }
+
     private func fetch(_ stream: ResolvedStream, to file: URL, progress: @escaping @MainActor (Double) -> Void) async throws {
         FileManager.default.createFile(atPath: file.path, contents: nil)
         let handle = try FileHandle(forWritingTo: file)
@@ -106,9 +132,7 @@ final class DownloadManager: ObservableObject {
         while true {
             try Task.checkCancellation()
             let end = offset + chunkSize - 1
-            var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)!
-            components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "range", value: "\(offset)-\(end)")]
-            var request = URLRequest(url: components.url!)
+            var request = URLRequest(url: stream.rangeURL(offset, end))
             stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {

@@ -266,6 +266,7 @@ struct EmptyMessage: View {
                     .font(LCD.font(unit * 0.42))
                     .foregroundStyle(LCD.secondaryText)
                     .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.6)
             }
         }
         .padding(unit * 0.4)

@@ -87,10 +87,12 @@ final class StreamPickingTests: XCTestCase {
              "audioTrack": ["audioIsDefault": false]],
             ["itag": 137, "mimeType": "video/mp4", "bitrate": 4_000_000, "url": "https://a/137"],
         ]]]
-        let stream = try XCTUnwrap(YouTube.bestAudio(in: root, userAgent: "UA"))
+        let client = YouTube.clients[0]
+        let stream = try XCTUnwrap(YouTube.bestAudio(in: root, client: client))
         XCTAssertEqual(stream.url.absoluteString, "https://a/140")
         XCTAssertEqual(stream.contentLength, 3_456_789)
-        XCTAssertEqual(stream.headers["User-Agent"], "UA")
+        XCTAssertEqual(stream.headers["User-Agent"], client.userAgent)
+        XCTAssertEqual(stream.client, client.name)
         XCTAssertFalse(stream.isHLS)
     }
 }

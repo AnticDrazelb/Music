@@ -135,7 +135,9 @@ extension Navigator {
                 case .failed(let reason)?:
                     rows.insert(MenuItem(id: "download", title: "Retry Download", detail: "!", chevron: false,
                                          action: { [unowned self] in downloads.download(track) }), at: 1)
-                    rows.append(MenuItem(id: "why", title: reason, chevron: false))
+                    rows.append(MenuItem(id: "why", title: "Why It Failed", action: { [unowned self] in
+                        push(Page(title: "Download Failed", message: reason))
+                    }))
                 }
             }
             return rows
