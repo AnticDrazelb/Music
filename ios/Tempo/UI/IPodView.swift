@@ -18,18 +18,21 @@ struct IPodView: View {
             let screenHeight = min(screenWidth * 0.75, geo.size.height * 0.42)
             let wheelSpace = geo.size.height - screenHeight - margin * 2
             let wheel = min(width * 0.74, wheelSpace * 0.88)
+            // Share out the room that's left: a small gap at the top, a wider one between
+            // the screen and the wheel, and the rest below the wheel.
+            let spare = max(0, geo.size.height - screenHeight - wheel)
 
             VStack(spacing: 0) {
-                Spacer(minLength: margin * 0.6)
+                Color.clear.frame(height: spare * 0.1)
                 bezel(width: screenWidth, height: screenHeight)
-                Spacer(minLength: margin)
+                Color.clear.frame(height: spare * 0.5)
                 ClickWheel(diameter: wheel, style: style) { event in
                     wake()
                     navigator.handle(event)
                 }
-                Spacer(minLength: margin)
+                Spacer(minLength: 0)
             }
-            .frame(width: width)
+            .frame(width: width, height: geo.size.height)
         }
         .background(shell(style).ignoresSafeArea())
         .overlay(CaseEdges(dark: style.dark).ignoresSafeArea())
