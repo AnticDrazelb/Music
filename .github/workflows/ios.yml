@@ -63,8 +63,9 @@ jobs:
           VERSION=$(grep -oE 'MARKETING_VERSION: "[^"]+"' project.yml | cut -d'"' -f2)
           mkdir -p build/Payload
           cp -R build/Tempo.xcarchive/Products/Applications/Tempo.app build/Payload/
-          (cd build && zip -qry "Tempo-iPod-$VERSION.ipa" Payload)
+          (cd build && zip -qry "Tempo-iPod-$VERSION.ipa" Payload && cp "Tempo-iPod-$VERSION.ipa" Tempo-iPod.ipa)
           echo "IPA=ios/build/Tempo-iPod-$VERSION.ipa" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -76,3 +77,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.IPA }}
+
+      # A rolling release with a fixed download link:
+      # https://github.com/<owner>/<repo>/releases/download/ios-latest/Tempo-iPod.ipa
+      - name: Publish latest build
+        if: github.ref == 'refs/heads/claude/ios-ipod'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          target_commitish: ${{ github.sha }}
+          name: Tempo iPod (latest build)
+          body: "Latest iOS build (${{ env.VERSION }}, ${{ github.sha }}). Unsigned: install with AltStore or Sideloadly."
+          prerelease: true
+          make_latest: false
+          files: ios/build/Tempo-iPod.ipa
