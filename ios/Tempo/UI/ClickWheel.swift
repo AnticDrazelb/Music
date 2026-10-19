@@ -30,7 +30,7 @@ struct ClickWheel: View {
     /// Where the finger is on the ring, for the faint sheen that follows it.
     @State private var touch: CGPoint?
 
-    private var centerDiameter: CGFloat { diameter * 0.39 }
+    private var centerDiameter: CGFloat { diameter * 0.32 }
     private var isDark: Bool { style.dark }
 
     var body: some View {

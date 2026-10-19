@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The whole iPod classic: an aluminium face, the 4:3 screen up top and the click wheel below.
+/// The whole iPod classic: an aluminium face, the screen up top and the click wheel below.
 struct IPodView: View {
     @StateObject private var navigator = Navigator()
     @EnvironmentObject var prefs: Preferences
@@ -13,19 +13,23 @@ struct IPodView: View {
         let style = PodStyle.of(prefs.body)
         GeometryReader { geo in
             let width = geo.size.width
-            let margin = width * 0.065
+            let height = geo.size.height
+            // Proportions taken from a real iPod-style layout on an iPhone: the screen nearly
+            // fills the width, the wheel is 80% of it, and the screen takes whatever height
+            // is left (between 4:3 and square).
+            let margin = width * 0.05
             let screenWidth = width - margin * 2
-            let screenHeight = min(screenWidth * 0.75, geo.size.height * 0.42)
-            let wheelSpace = geo.size.height - screenHeight - margin * 2
-            let wheel = min(width * 0.74, wheelSpace * 0.88)
-            // Share out the room that's left: a small gap at the top, a wider one between
-            // the screen and the wheel, and the rest below the wheel.
-            let spare = max(0, geo.size.height - screenHeight - wheel)
+            let topGap = width * 0.02
+            let gap = width * 0.17
+            let bottomGap = width * 0.06
+            let wheel = min(width * 0.8, height - topGap - gap - bottomGap - screenWidth * 0.75)
+            let screenHeight = min(screenWidth * 1.0, max(screenWidth * 0.75, height - topGap - gap - bottomGap - wheel))
+            let spare = max(0, height - topGap - screenHeight - gap - wheel - bottomGap)
 
             VStack(spacing: 0) {
-                Color.clear.frame(height: spare * 0.1)
+                Color.clear.frame(height: topGap + spare * 0.2)
                 bezel(width: screenWidth, height: screenHeight)
-                Color.clear.frame(height: spare * 0.5)
+                Color.clear.frame(height: gap + spare * 0.4)
                 ClickWheel(diameter: wheel, style: style) { event in
                     wake()
                     navigator.handle(event)
@@ -75,17 +79,17 @@ struct IPodView: View {
     }
 
     private func bezel(width: CGFloat, height: CGFloat) -> some View {
-        let border = width * 0.026
+        let border = width * 0.022
         return ScreenView(navigator: navigator)
             .frame(width: width - border * 2, height: height - border * 2)
             .overlay(ScreenGlass(dimmed: !lit))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .clipShape(RoundedRectangle(cornerRadius: width * 0.025))
             .padding(border)
             .background(
-                RoundedRectangle(cornerRadius: width * 0.03)
+                RoundedRectangle(cornerRadius: width * 0.045)
                     .fill(LinearGradient(colors: [Color(hex: 0x2A2B2E), Color(hex: 0x0E0E10)], startPoint: .top, endPoint: .bottom))
             )
-            .overlay(RoundedRectangle(cornerRadius: width * 0.03).stroke(.black.opacity(0.6), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: width * 0.045).stroke(.black.opacity(0.6), lineWidth: 1))
             .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }
 

@@ -102,11 +102,11 @@ struct ScreenGlass: View {
             // Backlight off: the LCD goes grey and dark but stays readable, like the real one.
             Color.black.opacity(dimmed ? 0.58 : 0)
             // Inner shadow from the bezel above.
-            RoundedRectangle(cornerRadius: 3)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.black.opacity(0.55), lineWidth: 8)
                 .blur(radius: 5)
                 .offset(y: 3)
-                .mask(RoundedRectangle(cornerRadius: 3))
+                .mask(RoundedRectangle(cornerRadius: 8))
             // Reflection on the plastic.
             LinearGradient(
                 stops: [
