@@ -150,7 +150,7 @@ struct MenuView: View {
                         SongHeader(track: track, unit: unit).frame(height: header)
                     }
                     if rows.isEmpty {
-                        EmptyMessage(text: page.loading ? nil : page.message, loading: page.loading, unit: unit)
+                        EmptyMessage(text: page.loading ? nil : page.message, loading: page.loading, loadingText: page.loadingText, unit: unit)
                     } else {
                         list(rows, visible: visible, rowHeight: rowHeight)
                     }
@@ -254,13 +254,14 @@ struct ScrollIndicator: View {
 struct EmptyMessage: View {
     let text: String?
     let loading: Bool
+    var loadingText = "Searching…"
     let unit: CGFloat
 
     var body: some View {
         VStack(spacing: unit * 0.3) {
             if loading {
                 ProgressView().controlSize(.regular).tint(LCD.secondaryText)
-                Text("Searching…").font(LCD.font(unit * 0.42)).foregroundStyle(LCD.secondaryText)
+                Text(loadingText).font(LCD.font(unit * 0.42)).foregroundStyle(LCD.secondaryText)
             } else if let text {
                 Text(text)
                     .font(LCD.font(unit * 0.42))

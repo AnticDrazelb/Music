@@ -52,6 +52,15 @@ struct IPodView: View {
             if phase == .active { Tilt.shared.start(); wake() } else { Tilt.shared.stop() }
         }
         .onChange(of: prefs.backlight) { _, _ in wake() }
+        .fileImporter(isPresented: $navigator.showImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { navigator.importFiles(urls) }
+        }
+        // "Open in Tempo" from the share sheet.
+        .onOpenURL { url in navigator.importFiles([url]) }
+        .task(id: scenePhase) {
+            // Pick up songs copied into Tempo's folder with the Files app or Finder.
+            if scenePhase == .active { _ = await LibraryImporter.shared.importDroppedFiles() }
+        }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
     }

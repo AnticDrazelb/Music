@@ -17,7 +17,12 @@ offline listening.
 - **Search**: turn the wheel through the letters and press the center button to type each one,
   then choose **GO**. Or tap the search box to use the keyboard. Results come from YouTube
   Music's catalogue. Select a song to play it (streamed) or **Download** it.
-- **Music → Artists / Albums / Songs**: everything you've downloaded, playable offline.
+- **Music → Artists / Albums / Songs**: everything you've downloaded or imported, playable offline.
+- **Your own music**: Music → Import from Files picks songs from Files, iCloud Drive or a USB
+  drive. You can also share an audio file to Tempo ("Open in Tempo"), or copy files into
+  On My iPhone → Tempo (or into Tempo from Finder on a Mac). They're added the next time the app
+  opens. Titles, artists, albums and artwork come from the files' tags. MP3, AAC/M4A, ALAC,
+  FLAC, WAV and AIFF all work.
 - **Downloads** shows songs that are downloading or failed. Holding the center button on a
   search result downloads it straight away.
 - **Shuffle Songs** shuffles your whole library.

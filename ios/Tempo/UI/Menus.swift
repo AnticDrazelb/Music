@@ -27,11 +27,12 @@ extension Navigator {
                 MenuItem(id: "albums", title: "Albums", action: { [unowned self] in push(albumsPage(artist: nil)) }),
                 MenuItem(id: "songs", title: "Songs", action: { [unowned self] in push(songsPage(title: "Songs") { [unowned self] in library.songs }) }),
                 MenuItem(id: "search", title: "Search", action: { [unowned self] in push(searchPage()) }),
+                MenuItem(id: "import", title: "Import from Files", chevron: false, action: { [unowned self] in showImporter = true }),
             ]
         }
     }
 
-    private static let emptyLibrary = "No songs yet.\nUse Search to find music and download it."
+    private static let emptyLibrary = "No songs yet.\nUse Search to download music, or Music → Import from Files."
 
     func artistsPage() -> Page {
         Page(title: "Artists", message: Self.emptyLibrary) { [unowned self] in

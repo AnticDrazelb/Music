@@ -41,6 +41,7 @@ final class Page: ObservableObject, Identifiable {
     @Published var selection = 0
     @Published var scrollTop = 0
     @Published var loading = false
+    var loadingText = "Searching…"
     @Published var message: String?
     @Published var results: [Track] = []
 
@@ -70,6 +71,8 @@ final class Navigator: ObservableObject {
     @Published private(set) var forward = true
     /// Rows that fit on the screen, set by the menu view.
     var visibleRows = 7
+    /// Shows the Files picker for importing songs.
+    @Published var showImporter = false
 
     let library: LibraryStore
     let downloads: DownloadManager
@@ -280,5 +283,38 @@ final class Navigator: ObservableObject {
         case .failed?: return "!"
         case nil: return nil
         }
+    }
+
+    /// Imports picked or shared files, showing progress and then how it went.
+    func importFiles(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let page = Page(title: "Import")
+        page.loading = true
+        page.loadingText = "Importing…"
+        push(page)
+        Task {
+            let result = await LibraryImporter.shared.importFiles(urls)
+            page.rows = { [unowned self] in importResultRows(result) }
+            page.message = "Nothing was imported."
+            page.loading = false
+        }
+    }
+
+    private func importResultRows(_ result: LibraryImporter.Result) -> [MenuItem] {
+        var rows: [MenuItem] = []
+        if !result.imported.isEmpty {
+            let songs = result.imported
+            rows.append(MenuItem(id: "count", title: "Imported", detail: "\(songs.count) song\(songs.count == 1 ? "" : "s")", chevron: false))
+            rows += songs.enumerated().map { i, track in
+                MenuItem(id: track.id, title: track.title, detail: track.artist, chevron: false, action: { [unowned self] in
+                    player.play(songs, startAt: i)
+                    push(nowPlayingPage())
+                })
+            }
+        }
+        rows += result.failed.map { name in
+            MenuItem(id: "failed-" + name, title: name, detail: "Can't play", chevron: false)
+        }
+        return rows
     }
 }
