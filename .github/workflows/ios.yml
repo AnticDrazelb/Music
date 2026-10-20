@@ -31,6 +31,7 @@ jobs:
           xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" > test.log 2>&1
           STATUS=$?
           grep -E "Test Case .*(passed|failed|skipped)|: error|XCTAssert|Executed" test.log
+          if [ $STATUS -ne 0 ]; then echo "--- end of test log ---"; tail -80 test.log; fi
           exit $STATUS
 
       - name: Simulator screenshots
