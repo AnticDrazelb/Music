@@ -71,13 +71,17 @@ final class DownloadManager: ObservableObject {
         defer { UIApplication.shared.endBackgroundTask(background) }
         states[track.id] = .downloading(0)
         do {
-            let fileName = try await saveAudio(of: track)
+            let (fileName, source) = try await saveAudio(of: track)
             try Task.checkCancellation()
 
             var saved = track
             saved.fileName = fileName
             saved.addedAt = Date()
-            saved.artworkFileName = await saveArtwork(for: track)
+            // An art track brings the album's square cover and name.
+            saved.album = saved.album ?? source.album
+            var artwork = await saveArtwork(for: source)
+            if artwork == nil, source.id != track.id { artwork = await saveArtwork(for: track) }
+            saved.artworkFileName = artwork
             library.add(saved)
             states[track.id] = nil
             queue.removeAll { $0.id == track.id }
@@ -89,26 +93,61 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    /// Tries each way YouTube offers the song until one downloads: a direct AAC file (checked
-    /// first, since YouTube sometimes refuses them with HTTP 403), then the HLS stream.
-    private func saveAudio(of track: Track) async throws -> String {
-        let progress: @MainActor (Double) -> Void = { [weak self] fraction in
-            self?.states[track.id] = .downloading(fraction)
+    /// Saves the song's audio, never its video. For a music video, its catalogue art track (the
+    /// album audio) is tried first; whichever of the two fails, the other is tried. Returns the
+    /// file name and the upload the audio came from.
+    private func saveAudio(of track: Track) async throws -> (String, Track) {
+        var order = [track]
+        var alternative: Track?
+        if track.isVideo != false {
+            alternative = await YouTube.shared.alternative(to: track)
+            if let artTrack = alternative, artTrack.isVideo == false { order.insert(artTrack, at: 0) }
         }
-        let (streams, found) = try await YouTube.shared.candidates(for: track.id)
+        var notes: [String] = []
+        var index = 0
+        while index < order.count {
+            let source = order[index]
+            index += 1
+            do {
+                return (try await saveAudio(videoId: source.id, as: track.id), source)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                let label = source.id == track.id ? "" : "Art track · "
+                if case YouTubeError.allFailed(let found) = error {
+                    notes += found.map { label + $0 }
+                } else {
+                    notes.append(label + error.localizedDescription)
+                }
+            }
+            if index == order.count, alternative == nil {
+                alternative = await YouTube.shared.alternative(to: track)
+                if let alternative, !order.contains(where: { $0.id == alternative.id }) { order.append(alternative) }
+            }
+        }
+        throw YouTubeError.allFailed(notes)
+    }
+
+    /// Tries each way YouTube offers one upload's audio until one downloads: a direct AAC file
+    /// (checked first, since YouTube refuses many with HTTP 403), then the HLS stream.
+    private func saveAudio(videoId: String, as name: String) async throws -> String {
+        let progress: @MainActor (Double) -> Void = { [weak self] fraction in
+            self?.states[name] = .downloading(fraction)
+        }
+        let (streams, found) = try await YouTube.shared.candidates(for: videoId)
         var notes = found
         for stream in streams {
             try Task.checkCancellation()
             do {
                 if stream.isHLS {
-                    return try await HLSDownloader.download(stream, name: track.id, to: library.musicFolder, progress: progress)
+                    return try await HLSDownloader.download(stream, name: name, to: library.musicFolder, progress: progress)
                 }
                 let status = await YouTube.shared.probe(stream)
                 guard (200..<300).contains(status) else {
                     notes.append("\(stream.client): audio refused (HTTP \(status))")
                     continue
                 }
-                let fileName = "\(track.id).m4a"
+                let fileName = "\(name).m4a"
                 let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
                 try await fetch(stream, to: temp, progress: progress)
                 let destination = library.musicFolder.appendingPathComponent(fileName)

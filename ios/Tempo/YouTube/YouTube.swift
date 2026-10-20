@@ -68,6 +68,26 @@ actor YouTube {
         return SearchParser.songs(in: try await musicPost("search", ["query": query]))
     }
 
+    /// The other upload of the same song: for a music video, its catalogue "art track" (just the
+    /// album audio, with the cover art); for an art track, any upload of it. YouTube often serves
+    /// one when it refuses the other.
+    func alternative(to track: Track) async -> Track? {
+        guard let results = try? await searchSongs("\(track.title) \(track.artist)") else { return nil }
+        func normalized(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let title = normalized(track.title), artist = normalized(track.artist)
+        let matches = results.filter { other in
+            guard other.id != track.id else { return false }
+            let otherTitle = normalized(other.title), otherArtist = normalized(other.artist)
+            let sameTitle = !title.isEmpty && (otherTitle == title || otherTitle.hasPrefix(title) || title.hasPrefix(otherTitle))
+            let sameArtist = artist.isEmpty || otherArtist.contains(artist) || artist.contains(otherArtist)
+            // Within 15 seconds when both lengths are known, so a live or extended version isn't picked.
+            let sameLength = track.duration == nil || other.duration == nil || abs(track.duration! - other.duration!) <= 15
+            return sameTitle && sameArtist && sameLength
+        }
+        if track.isVideo != false, let artTrack = matches.first(where: { $0.isVideo == false }) { return artTrack }
+        return matches.first
+    }
+
     /// Live suggestions while typing.
     func suggestions(_ query: String) async throws -> [String] {
         let root = try await musicPost("music/get_search_suggestions", ["input": query])
@@ -284,12 +304,51 @@ actor YouTube {
         return "audio has no link"
     }
 
-    /// A stream to play now: the first direct link that answers, else HLS (AVPlayer plays it natively).
+    /// A stream to play `track` now. Like downloads, a music video's art track (its album audio)
+    /// comes first, and whichever upload fails, the other is tried.
+    func playableStream(for track: Track) async throws -> ResolvedStream {
+        var order = [track.id]
+        var alternative: Track?
+        if track.isVideo != false {
+            alternative = await self.alternative(to: track)
+            if let artTrack = alternative, artTrack.isVideo == false { order.insert(artTrack.id, at: 0) }
+        }
+        var notes: [String] = []
+        var index = 0
+        while index < order.count {
+            let id = order[index]
+            index += 1
+            do {
+                return try await playableStream(for: id)
+            } catch {
+                let label = id == track.id ? "" : "Art track · "
+                if case YouTubeError.allFailed(let found) = error { notes += found.map { label + $0 } } else { notes.append(label + error.localizedDescription) }
+            }
+            if index == order.count, alternative == nil, let other = await self.alternative(to: track), !order.contains(other.id) {
+                alternative = other
+                order.append(other.id)
+            }
+        }
+        throw YouTubeError.allFailed(notes)
+    }
+
+    /// A stream to play one upload: the first direct link that answers, else the audio-only
+    /// part of its HLS stream (AVPlayer plays HLS natively, and no video is fetched).
     func playableStream(for videoId: String) async throws -> ResolvedStream {
         let (all, found) = try await candidates(for: videoId)
         var notes = found
         for stream in all {
-            if stream.isHLS { return stream }
+            if stream.isHLS {
+                var request = URLRequest(url: stream.url)
+                stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+                guard let (data, _) = try? await session.data(for: request),
+                      let audio = try? HLSPlaylist.mediaPlaylist(in: String(decoding: data, as: UTF8.self), base: stream.url) else {
+                    notes.append("\(stream.client) HLS: couldn't read the playlist")
+                    continue
+                }
+                return ResolvedStream(url: audio, mimeType: stream.mimeType, contentLength: nil,
+                                      headers: stream.headers, isHLS: true, client: stream.client)
+            }
             let status = await probe(stream)
             if (200..<300).contains(status) { return stream }
             notes.append("\(stream.client): audio refused (HTTP \(status))")

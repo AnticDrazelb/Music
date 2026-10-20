@@ -89,7 +89,8 @@ enum SearchParser {
             artist: artist,
             album: albumPart.map(joined),
             duration: duration,
-            artworkURL: TitleCleaner.artworkURL(largestThumbnail(item))
+            artworkURL: TitleCleaner.artworkURL(largestThumbnail(item)),
+            isVideo: type.map { $0 != catalogue }
         )
     }
 

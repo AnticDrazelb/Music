@@ -16,6 +16,9 @@ struct Track: Codable, Identifiable, Hashable {
     /// Artwork file name inside the library's Artwork folder, once downloaded.
     var artworkFileName: String?
     var addedAt: Date?
+    /// True for a music video or other upload, false for a catalogue "art track" (audio with
+    /// the album cover), nil when unknown. Only the audio is ever fetched either way.
+    var isVideo: Bool?
 
     var albumTitle: String { album?.isEmpty == false ? album! : "Unknown Album" }
 
