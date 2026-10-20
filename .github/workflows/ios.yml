@@ -27,7 +27,11 @@ jobs:
       - name: Unit tests
         run: |
           DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
-          xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" -quiet
+          set +e
+          xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" > test.log 2>&1
+          STATUS=$?
+          grep -E "Test Case .*(passed|failed|skipped)|: error|XCTAssert|Executed" test.log
+          exit $STATUS
 
       - name: Simulator screenshots
         continue-on-error: true
