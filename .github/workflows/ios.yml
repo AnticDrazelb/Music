@@ -68,6 +68,10 @@ jobs:
           VERSION=$(grep -oE 'MARKETING_VERSION: "[^"]+"' project.yml | cut -d'"' -f2)
           mkdir -p build/Payload
           cp -R build/Tempo.xcarchive/Products/Applications/Tempo.app build/Payload/
+          # A strong link to WebKit's Swift add-on stops the app launching where iOS lacks it.
+          if otool -l build/Payload/Tempo.app/Tempo | grep -A2 "cmd LC_LOAD_DYLIB" | grep -q libswiftWebKit; then
+            echo "Tempo links libswiftWebKit strongly"; exit 1
+          fi
           (cd build && zip -qry "Tempo-iPod-$VERSION.ipa" Payload && cp "Tempo-iPod-$VERSION.ipa" Tempo-iPod.ipa)
           echo "IPA=ios/build/Tempo-iPod-$VERSION.ipa" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"

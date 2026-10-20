@@ -5,8 +5,12 @@ import WebKit
 /// does: Google's BotGuard check runs in a hidden web view on a youtube.com page, YouTube
 /// turns its answer into an integrity token, and the page uses that to mint a token for a
 /// visitor or video ID. This follows the published protocol used by NewPipe and BgUtils.
+///
+/// Only WebKit's Objective-C calls are used (results come back through a script message
+/// handler): its Swift-only async calls live in a library some iOS versions don't have,
+/// which stops the app from launching.
 @MainActor
-final class PoToken: NSObject, WKNavigationDelegate {
+final class PoToken: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     static let shared = PoToken()
 
     enum Failure: LocalizedError {
@@ -25,26 +29,74 @@ final class PoToken: NSObject, WKNavigationDelegate {
     private var tokens: [String: String] = [:]
     private var setUpTask: Task<Void, Error>?
     private var pageLoaded: CheckedContinuation<Void, Error>?
+    /// Page calls waiting for their result, by call number.
+    private var calls: [Int: CheckedContinuation<Any?, Error>] = [:]
+    private var lastCall = 0
 
     /// A token bound to `identifier` (a visitor ID for stream links, a video ID for the player).
     func token(for identifier: String) async throws -> String {
         if let expires, expires.timeIntervalSinceNow < 120 { reset() }
         if let token = tokens[identifier] { return token }
         try await ready()
-        guard let webView else { throw Failure.setup("no web view") }
-        let result = try await webView.callAsyncJavaScript(
-            "return await tempoMint(identifier)", arguments: ["identifier": identifier], contentWorld: .page)
-        guard let token = result as? String, !token.isEmpty else { throw Failure.setup("mint") }
+        guard let token = try await call("tempoMint", [identifier]) as? String, !token.isEmpty else {
+            throw Failure.setup("mint")
+        }
         tokens[identifier] = token
         return token
     }
 
     private func reset() {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "tempo")
         webView?.removeFromSuperview()
         webView = nil
         expires = nil
         tokens = [:]
         setUpTask = nil
+        for (_, waiting) in calls { waiting.resume(throwing: Failure.setup("reset")) }
+        calls = [:]
+    }
+
+    /// Calls an async function the page script defines, and waits (up to 30 s) for its result.
+    private func call(_ function: String, _ arguments: [Any]) async throws -> Any? {
+        guard let webView else { throw Failure.setup("no web view") }
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: arguments), as: UTF8.self)
+        lastCall += 1
+        let id = lastCall
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            calls[id] = continuation
+            webView.evaluateJavaScript("tempoCall(\(id), '\(function)', \(json))") { [weak self] _, error in
+                guard let error else { return }
+                MainActor.assumeIsolated { self?.calls.removeValue(forKey: id)?.resume(throwing: error) }
+            }
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                self?.calls.removeValue(forKey: id)?.resume(throwing: Failure.setup("\(function) timed out"))
+            }
+        }
+    }
+
+    /// Runs a script that finishes straight away and returns its value.
+    private func evaluate(_ script: String) async throws -> Any? {
+        guard let webView else { throw Failure.setup("no web view") }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            webView.evaluateJavaScript(script) { result, error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: result) }
+            }
+        }
+    }
+
+    // MARK: WKScriptMessageHandler
+
+    nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let body = message.body as? [String: Any]
+        MainActor.assumeIsolated {
+            guard let body, let id = (body["id"] as? NSNumber)?.intValue, let waiting = calls.removeValue(forKey: id) else { return }
+            if (body["ok"] as? NSNumber)?.boolValue == true {
+                waiting.resume(returning: body["value"])
+            } else {
+                waiting.resume(throwing: Failure.setup(body["value"] as? String ?? "script error"))
+            }
+        }
     }
 
     private func ready() async throws {
@@ -63,6 +115,7 @@ final class PoToken: NSObject, WKNavigationDelegate {
     private func setUp() async throws {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.add(self, name: "tempo")
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 2, height: 2), configuration: configuration)
         webView.navigationDelegate = self
         webView.alpha = 0.01
@@ -77,12 +130,11 @@ final class PoToken: NSObject, WKNavigationDelegate {
             webView.loadHTMLString("<!DOCTYPE html><html><head></head><body></body></html>",
                                    baseURL: URL(string: "https://www.youtube.com/"))
         }
-        _ = try await webView.evaluateJavaScript(Self.script)
-        let userAgent = (try? await webView.evaluateJavaScript("navigator.userAgent")) as? String
+        _ = try await evaluate(Self.script)
+        let userAgent = (try? await evaluate("navigator.userAgent")) as? String
 
         let challenge = try await jnn("Create", body: [Self.requestKey], userAgent: userAgent)
-        let response = try await webView.callAsyncJavaScript(
-            "return await tempoRunBotGuard(challenge)", arguments: ["challenge": challenge], contentWorld: .page)
+        let response = try await call("tempoRunBotGuard", [challenge])
         guard let botguard = response as? String, !botguard.isEmpty else { throw Failure.setup("BotGuard") }
 
         let integrity = try await jnn("GenerateIT", body: [Self.requestKey, botguard], userAgent: userAgent)
@@ -90,8 +142,7 @@ final class PoToken: NSObject, WKNavigationDelegate {
             throw Failure.setup("integrity token")
         }
         let lifetime = (parts.count > 1 ? parts[1] as? Double : nil) ?? 3600
-        _ = try await webView.callAsyncJavaScript(
-            "return await tempoSetIntegrityToken(token)", arguments: ["token": integrityToken], contentWorld: .page)
+        _ = try await call("tempoSetIntegrityToken", [integrityToken])
         expires = Date().addingTimeInterval(lifetime)
     }
 
@@ -141,6 +192,13 @@ final class PoToken: NSObject, WKNavigationDelegate {
     /// Create call: either plain, or base64 with every byte shifted by 97.
     private static let script = #"""
     window.tempo = { signal: [] };
+    window.tempoCall = function (id, name, args) {
+        const post = (ok, value) => window.webkit.messageHandlers.tempo.postMessage({ id: id, ok: ok, value: value });
+        Promise.resolve()
+            .then(() => window[name].apply(null, args))
+            .then(value => post(true, value), error => post(false, String((error && error.message) || error)));
+        return true;
+    };
     function tempoB64ToU8(s) {
         s = s.replace(/-/g, '+').replace(/_/g, '/').replace(/\./g, '=');
         const bin = atob(s);
