@@ -106,6 +106,29 @@ final class StreamPickingTests: XCTestCase {
     }
 }
 
+/// Gets audio the way the Android app's NewPipe does: the visionOS client's player data and
+/// app-style ranged POSTs. Needs the network. (Most music refuses data-centre addresses, so
+/// this uses a video that doesn't.)
+final class VisionOSStreamTests: XCTestCase {
+    func testDownloadsFromVisionOSClient() async throws {
+        let client = try XCTUnwrap(YouTube.clients.first { $0.name == "VISIONOS" })
+        let streams: [ResolvedStream]
+        do {
+            streams = try await YouTube.shared.streams(for: "dQw4w9WgXcQ", client: client)
+        } catch let error as URLError {
+            throw XCTSkip("YouTube unreachable: \(error.localizedDescription)")
+        }
+        let stream = try XCTUnwrap(streams.first { !$0.isHLS })
+        XCTAssertTrue(stream.url.absoluteString.contains("cpn="))
+        let length = try XCTUnwrap(stream.contentLength)
+        for (number, range) in [(1, (Int64(0), Int64(65_535))), (2, (length - 1024, length - 1))] {
+            let (data, response) = try await URLSession.shared.data(for: stream.request(bytes: range.0, through: range.1, number: number))
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 206)
+            XCTAssertEqual(Int64(data.count), range.1 - range.0 + 1)
+        }
+    }
+}
+
 /// Runs Google's BotGuard check in a web view and mints a token, as downloads do. Needs the
 /// network; skipped when YouTube's token service can't be reached.
 @MainActor

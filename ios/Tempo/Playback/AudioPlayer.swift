@@ -28,6 +28,10 @@ final class AudioPlayer: ObservableObject {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var loadTask: Task<Void, Never>?
+    /// Fetches the streamed song for AVPlayer; kept while it plays.
+    private var streamLoader: StreamLoader? {
+        didSet { if oldValue !== streamLoader { oldValue?.cancelAll() } }
+    }
     /// The queue in its original order, to restore when shuffle is switched off.
     private var unshuffled: [Track] = []
 
@@ -156,6 +160,7 @@ final class AudioPlayer: ObservableObject {
     func stop() {
         loadTask?.cancel()
         player.replaceCurrentItem(with: nil)
+        streamLoader = nil
         queue = []
         index = 0
         isPlaying = false
@@ -173,6 +178,7 @@ final class AudioPlayer: ObservableObject {
         currentTime = 0
         duration = Double(track.duration ?? 0)
         player.replaceCurrentItem(with: nil)
+        streamLoader = nil
         updateNowPlaying()
 
         if let file = library.fileURL(for: track) {
@@ -184,7 +190,15 @@ final class AudioPlayer: ObservableObject {
             do {
                 let stream = try await YouTube.shared.playableStream(for: track)
                 guard !Task.isCancelled, let self, self.current?.id == track.id else { return }
-                let asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
+                let asset: AVURLAsset
+                if stream.isHLS {
+                    asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
+                } else {
+                    // Direct links are fetched the way YouTube's apps fetch them, which AVPlayer can't do itself.
+                    let loader = StreamLoader(stream: stream)
+                    self.streamLoader = loader
+                    asset = loader.makeAsset()
+                }
                 self.isLoading = false
                 self.start(AVPlayerItem(asset: asset), autoplay: autoplay)
             } catch {

@@ -20,7 +20,7 @@ final class DownloadManager: ObservableObject {
     private var running: [String: Task<Void, Never>] = [:]
     private let maxConcurrent = 2
     /// googlevideo throttles single big requests, so files come down in ranges like YouTube's apps do.
-    private let chunkSize: Int64 = 4 * 1024 * 1024
+    private let chunkSize: Int64 = 2 * 1024 * 1024
 
     init(library: LibraryStore = .shared) {
         self.library = library
@@ -128,60 +128,81 @@ final class DownloadManager: ObservableObject {
         throw YouTubeError.allFailed(notes)
     }
 
-    /// Tries each way YouTube offers one upload's audio until one downloads: a direct AAC file
-    /// (checked first, since YouTube refuses many with HTTP 403), then the HLS stream.
+    /// Asks each YouTube client in turn (the visionOS app first) and downloads the first of its
+    /// streams that comes down whole: a direct AAC file, else its HLS stream. A refused link
+    /// fails on its first chunk, so the next one is tried straight away.
     private func saveAudio(videoId: String, as name: String) async throws -> String {
         let progress: @MainActor (Double) -> Void = { [weak self] fraction in
             self?.states[name] = .downloading(fraction)
         }
-        let (streams, found) = try await YouTube.shared.candidates(for: videoId)
-        var notes = found
-        for stream in streams {
+        var notes: [String] = []
+        for client in YouTube.clients {
             try Task.checkCancellation()
+            let streams: [ResolvedStream]
             do {
-                if stream.isHLS {
-                    return try await HLSDownloader.download(stream, name: name, to: library.musicFolder, progress: progress)
-                }
-                let status = await YouTube.shared.probe(stream)
-                guard (200..<300).contains(status) else {
-                    notes.append("\(stream.client): audio refused (HTTP \(status))")
-                    continue
-                }
-                let fileName = "\(name).m4a"
-                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
-                try await fetch(stream, to: temp, progress: progress)
-                let destination = library.musicFolder.appendingPathComponent(fileName)
-                try? FileManager.default.removeItem(at: destination)
-                try FileManager.default.moveItem(at: temp, to: destination)
-                return fileName
-            } catch is CancellationError {
-                throw CancellationError()
+                streams = try await YouTube.shared.streams(for: videoId, client: client)
+            } catch YouTubeError.allFailed(let more) {
+                notes += more
+                continue
             } catch {
-                notes.append("\(stream.client)\(stream.isHLS ? " HLS" : ""): \(error.localizedDescription)")
+                notes.append("\(client.name): \(error.localizedDescription)")
+                continue
+            }
+            for stream in streams {
+                try Task.checkCancellation()
+                do {
+                    if stream.isHLS {
+                        return try await HLSDownloader.download(stream, name: name, to: library.musicFolder, progress: progress)
+                    }
+                    let fileName = "\(name).m4a"
+                    let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+                    defer { try? FileManager.default.removeItem(at: temp) }
+                    try await fetch(stream, to: temp, progress: progress)
+                    let destination = library.musicFolder.appendingPathComponent(fileName)
+                    try? FileManager.default.removeItem(at: destination)
+                    try FileManager.default.moveItem(at: temp, to: destination)
+                    return fileName
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    progress(0)
+                    notes.append("\(stream.client)\(stream.isHLS ? " HLS" : ""): \(error.localizedDescription)")
+                }
             }
         }
         throw YouTubeError.allFailed(notes)
     }
 
+    /// Downloads a direct stream in chunks, each requested the way YouTube's apps do.
     private func fetch(_ stream: ResolvedStream, to file: URL, progress: @escaping @MainActor (Double) -> Void) async throws {
         FileManager.default.createFile(atPath: file.path, contents: nil)
         let handle = try FileHandle(forWritingTo: file)
         defer { try? handle.close() }
         var offset: Int64 = 0
-        let total = stream.contentLength
-        while true {
+        var total = stream.contentLength
+        var number = 1
+        while total.map({ offset < $0 }) ?? true {
             try Task.checkCancellation()
-            let end = offset + chunkSize - 1
-            var request = URLRequest(url: stream.rangeURL(offset, end))
-            stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+            let request = stream.request(bytes: offset, through: offset + chunkSize - 1, number: number)
+            number += 1
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw YouTubeError.http(http.statusCode)
+            guard let http = response as? HTTPURLResponse else { throw YouTubeError.unexpectedResponse }
+            guard (200..<300).contains(http.statusCode) else {
+                throw offset == 0 ? YouTubeError.audioRefused(http.statusCode)
+                                  : YouTubeError.cutOff(http.statusCode, Int(Double(offset) / Double(total ?? offset) * 100))
             }
+            if http.statusCode == 200 {
+                // The server ignored the range and sent the whole file.
+                try handle.truncate(atOffset: 0)
+                try handle.write(contentsOf: data)
+                offset = Int64(data.count)
+                break
+            }
+            total = ResolvedStream.totalLength(http) ?? total
             try handle.write(contentsOf: data)
             offset += Int64(data.count)
             if let total, total > 0 { progress(min(1, Double(offset) / Double(total))) }
-            if data.count < chunkSize || (total.map { offset >= $0 } ?? false) || data.isEmpty { break }
+            if data.isEmpty || (total == nil && data.count < chunkSize) { break }
         }
         guard offset > 0 else { throw YouTubeError.noAudio }
     }

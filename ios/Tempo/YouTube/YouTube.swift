@@ -6,11 +6,16 @@ enum YouTubeError: LocalizedError {
     case unplayable(String)
     case noAudio
     case allFailed([String])
+    case audioRefused(Int)
+    /// The download stopped partway (at this percentage): a link that needs a token.
+    case cutOff(Int, Int)
 
     var errorDescription: String? {
         switch self {
         case .unexpectedResponse: return "YouTube sent something unexpected"
         case .http(let code): return "YouTube refused the request (HTTP \(code))"
+        case .audioRefused(let code): return "audio refused (HTTP \(code))"
+        case .cutOff(let code, let percent): return "cut off at \(percent)% (HTTP \(code))"
         case .unplayable(let reason): return reason
         case .noAudio: return "No downloadable audio for this song"
         case .allFailed(let notes): return notes.isEmpty ? "No playable audio for this song" : notes.joined(separator: "\n")
@@ -29,11 +34,23 @@ struct ResolvedStream {
     /// Which YouTube client handed it out, for error messages.
     let client: String
 
-    /// The same direct stream limited to a byte range, the way YouTube's apps fetch it.
-    func rangeURL(_ start: Int64, _ end: Int64) -> URL {
+    /// A request for some of the file, made the way YouTube's own apps (and NewPipe) make
+    /// them: a POST with a two-byte body, a request number, and a Range header.
+    func request(bytes start: Int64, through end: Int64, number: Int) -> URLRequest {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "range", value: "\(start)-\(end)")]
-        return components.url!
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "rn", value: String(number))]
+        var request = URLRequest(url: components.url ?? url)
+        request.httpMethod = "POST"
+        request.httpBody = Data([0x78, 0x00])
+        request.timeoutInterval = 30
+        headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
+        return request
+    }
+
+    /// The file's full size from a ranged response ("bytes 0-1023/4567890").
+    static func totalLength(_ response: HTTPURLResponse) -> Int64? {
+        (response.value(forHTTPHeaderField: "Content-Range")?.split(separator: "/").last).flatMap { Int64($0) }
     }
 }
 
@@ -124,8 +141,8 @@ actor YouTube {
 
     // MARK: Streams
 
-    /// A YouTube app the player request identifies as. Each gets different links: some stop
-    /// after the first megabyte for apps that don't send a token, so several are tried.
+    /// A YouTube app the player request identifies as. Each gets different links, and YouTube
+    /// refuses some apps' links without a token, so several are tried in turn.
     struct Client {
         let name: String
         /// The InnerTube client name sent to YouTube.
@@ -134,7 +151,7 @@ actor YouTube {
         let version: String
         let userAgent: String
         let extra: [String: Any]
-        /// Its links are scrambled and need YouTube's player script to unlock (see PlayerScript).
+        /// Sends the player script's signature timestamp (its links are scrambled).
         var needsPlayerScript = false
         /// A web player: its links want youtube.com's headers.
         var web = false
@@ -142,6 +159,9 @@ actor YouTube {
         var embedded = false
         /// Sends a PoToken with its player request and on its stream links.
         var needsPoToken = false
+        /// Asks like YouTube's own apps do (and NewPipe for them): on youtubei.googleapis.com,
+        /// with a visitor ID of its own and a playback nonce (cpn) also put on its links.
+        var app = false
 
         /// Headers googlevideo expects when fetching this client's links.
         var streamHeaders: [String: String] {
@@ -149,6 +169,9 @@ actor YouTube {
             if web {
                 headers["Origin"] = "https://www.youtube.com"
                 headers["Referer"] = "https://www.youtube.com/"
+                headers["Sec-Fetch-Dest"] = "empty"
+                headers["Sec-Fetch-Mode"] = "cors"
+                headers["Sec-Fetch-Site"] = "cross-site"
             }
             return headers
         }
@@ -157,14 +180,21 @@ actor YouTube {
     private static let webUserAgentChrome =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
-    /// Tried in this order. The mobile site gets a PoToken made in a web view; the TV and
-    /// embedded players scramble their links; the phone apps' links are now cut off without
-    /// a token only those apps can make.
+    /// Tried in this order. The visionOS app comes first: it's what NewPipe (and so the Android
+    /// app) gets its audio from without any token. The mobile site, whose token takes a few
+    /// seconds to make, comes last.
     static let clients: [Client] = [
         Client(
-            name: "MWEB", clientName: "MWEB", id: "2", version: "2.20250925.01.00",
-            userAgent: "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)",
-            extra: [:], needsPlayerScript: true, web: true, needsPoToken: true
+            name: "VISIONOS", clientName: "VISIONOS", id: "101", version: "1.02",
+            userAgent: "com.google.visionos.youtube/1.02(RealityDevice14,1; U; CPU visionOS 25_6_0 like Mac OS X; US)",
+            extra: ["clientScreen": "WATCH", "platform": "MOBILE", "deviceMake": "Apple", "deviceModel": "RealityDevice14,1",
+                    "osName": "visionOS", "osVersion": "25.6.0.23O471", "utcOffsetMinutes": 0],
+            app: true
+        ),
+        Client(
+            name: "ANDROID_VR", clientName: "ANDROID_VR", id: "28", version: "1.65.10",
+            userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]
         ),
         Client(
             name: "TV", clientName: "TVHTML5", id: "7", version: "7.20250923.13.00",
@@ -176,101 +206,92 @@ actor YouTube {
             userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true
         ),
         Client(
-            name: "WEB_EMBEDDED", clientName: "WEB_EMBEDDED_PLAYER", id: "56", version: "1.20250923.21.00",
+            name: "WEB_EMBEDDED", clientName: "WEB_EMBEDDED_PLAYER", id: "56", version: "1.20260122.01.00",
             userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true, web: true, embedded: true
         ),
-        Client(
-            name: "ANDROID_VR", clientName: "ANDROID_VR", id: "28", version: "1.65.10",
-            userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-            extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]
-        ),
-        // The Android app without an SDK version.
-        Client(
-            name: "ANDROID_SDKLESS", clientName: "ANDROID", id: "3", version: "20.10.38",
-            userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip",
-            extra: ["osName": "Android", "osVersion": "11"]
-        ),
-        // Mostly for its HLS stream, the last resort.
+        // Mostly for its HLS stream.
         Client(
             name: "IOS", clientName: "IOS", id: "5", version: "20.10.4",
             userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
             extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]
         ),
+        Client(
+            name: "MWEB", clientName: "MWEB", id: "2", version: "2.20250925.01.00",
+            userAgent: "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)",
+            extra: [:], needsPlayerScript: true, web: true, needsPoToken: true
+        ),
     ]
 
-    /// Every way YouTube offers this song's audio, best first: each client's direct AAC (m4a)
-    /// stream, then the iOS client's HLS stream. AVPlayer can't play YouTube's Opus/WebM, so
-    /// only AAC is used. Direct links are sometimes refused when fetched (HTTP 403) even
-    /// though the lookup worked, so callers try them in turn. `notes` says what each client
-    /// that gave nothing usable answered, for the error shown when everything fails.
-    func candidates(for videoId: String) async throws -> (streams: [ResolvedStream], notes: [String]) {
-        if visitorData == nil { _ = try? await musicPost("search", ["query": "music"]) }
-        var direct: [ResolvedStream] = []
-        var hls: [ResolvedStream] = []
-        var notes: [String] = []
-        var unplayable: String?
-        for client in Self.clients {
-            do {
-                var root = try await player(videoId, client: client)
-                var status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
-                if status == "UNPLAYABLE",
-                   JSONTree.string(root, "playabilityStatus", "reason")?.localizedCaseInsensitiveContains("reload") == true {
-                    // "The page needs to be reloaded": the TV client turns down the visitor ID from
-                    // YouTube Music, so ask again without one.
-                    root = try await player(videoId, client: client, sendVisitorData: false)
-                    status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
-                }
-                guard status == "OK" else {
-                    let reason = JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played"
-                    if status != "LOGIN_REQUIRED" { unplayable = unplayable ?? friendly(reason) }
-                    let short = reason.localizedCaseInsensitiveContains("bot") ? "bot check" : reason
-                    notes.append("\(client.name): \(short) (\(status))")
-                    continue
-                }
-                var audio: ResolvedStream?
-                if client.needsPlayerScript, let format = Self.bestAudioFormat(in: root) {
-                    do {
-                        audio = Self.stream(format, url: try await PlayerScript.shared.url(for: format), client: client)
-                    } catch {
-                        notes.append("\(client.name): \(error.localizedDescription)")
-                    }
-                } else {
-                    audio = Self.bestAudio(in: root, client: client)
-                }
-                if let audio {
-                    if client.needsPoToken {
-                        do {
-                            direct += try await withPoTokens(audio, videoId: videoId)
-                        } catch {
-                            notes.append("\(client.name): \(error.localizedDescription)")
-                        }
-                    } else {
-                        direct.append(audio)
-                    }
-                }
-                let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:))
-                if let manifest {
-                    hls.append(ResolvedStream(url: manifest, mimeType: "application/x-mpegURL", contentLength: nil,
-                                              headers: client.streamHeaders, isHLS: true, client: client.name))
-                }
-                if audio == nil && manifest == nil && !notes.contains(where: { $0.hasPrefix(client.name + ":") }) {
-                    notes.append("\(client.name): \(Self.whyNoAudio(root))")
-                }
-            } catch {
-                notes.append("\(client.name): \(error.localizedDescription)")
+    /// Visitor IDs the app-style clients got for themselves, by client name.
+    private var appVisitorData: [String: String] = [:]
+
+    /// One client's ways to get this video's audio: its best AAC (m4a) stream, then its HLS
+    /// stream if it has one. AVPlayer can't play YouTube's Opus/WebM, so only AAC is used, and
+    /// no video is ever fetched. Throws `allFailed` with a one-line note when the client gives
+    /// nothing usable, so callers can say what each one answered.
+    func streams(for videoId: String, client: Client) async throws -> [ResolvedStream] {
+        do {
+            if visitorData == nil { _ = try? await musicPost("search", ["query": "music"]) }
+            var (root, cpn) = try await player(videoId, client: client)
+            var status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
+            if status == "UNPLAYABLE",
+               JSONTree.string(root, "playabilityStatus", "reason")?.localizedCaseInsensitiveContains("reload") == true {
+                // "The page needs to be reloaded": the TV client turns down the visitor ID from
+                // YouTube Music, so ask again without one.
+                (root, cpn) = try await player(videoId, client: client, sendVisitorData: false)
+                status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
             }
-        }
-        let all = direct + hls
-        if all.isEmpty {
-            if let unplayable { throw YouTubeError.unplayable(unplayable) }
+            guard status == "OK" else {
+                let reason = JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played"
+                let short = reason.localizedCaseInsensitiveContains("bot") ? "bot check" : reason
+                throw YouTubeError.allFailed(["\(client.name): \(short) (\(status))"])
+            }
+
+            var found: [ResolvedStream] = []
+            var problem: String?
+            if let format = Self.bestAudioFormat(in: root) {
+                do {
+                    var url = try await unlockedURL(format)
+                    if let cpn { url = Self.adding("cpn", cpn, to: url) }
+                    let audio = Self.stream(format, url: url, client: client)
+                    found += client.needsPoToken ? try await withPoTokens(audio, videoId: videoId) : [audio]
+                } catch {
+                    problem = error.localizedDescription
+                }
+            }
+            if let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:)) {
+                found.append(ResolvedStream(url: manifest, mimeType: "application/x-mpegURL", contentLength: nil,
+                                            headers: client.streamHeaders, isHLS: true, client: client.name))
+            }
+            if found.isEmpty { throw YouTubeError.allFailed(["\(client.name): \(problem ?? Self.whyNoAudio(root))"]) }
+            return found
+        } catch YouTubeError.allFailed(let notes) {
             throw YouTubeError.allFailed(notes)
+        } catch {
+            throw YouTubeError.allFailed(["\(client.name): \(error.localizedDescription)"])
         }
-        return (all, notes)
+    }
+
+    /// A format's URL, ready to fetch. Like NewPipe, the `n` parameter on every link is run
+    /// through YouTube's player script (a link with an unsolved `n` is refused), and a
+    /// scrambled signature is decoded the same way.
+    private func unlockedURL(_ format: JSONTree.Object) async throws -> URL {
+        if let plain = (format["url"] as? String).flatMap(URL.init(string:)),
+           URLComponents(url: plain, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "n" }) != true {
+            return plain
+        }
+        return try await PlayerScript.shared.url(for: format)
+    }
+
+    private static func adding(_ name: String, _ value: String, to url: URL) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: name, value: value)]
+        return components.url ?? url
     }
 
     /// The stream with a PoToken on it. Logged out, YouTube binds the token to the visitor ID;
     /// which spelling of the ID (or the video ID instead) it checks isn't documented, so each
-    /// is offered and the link check picks the one that works.
+    /// is offered and the first that downloads wins.
     private func withPoTokens(_ stream: ResolvedStream, videoId: String) async throws -> [ResolvedStream] {
         var identifiers: [String] = []
         if let visitorData {
@@ -281,11 +302,9 @@ actor YouTube {
         var streams: [ResolvedStream] = []
         for identifier in identifiers {
             let token = try await PoToken.shared.token(for: identifier)
-            var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)!
-            components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "pot", value: token)]
-            guard let url = components.url else { continue }
-            streams.append(ResolvedStream(url: url, mimeType: stream.mimeType, contentLength: stream.contentLength,
-                                          headers: stream.headers, isHLS: false, client: stream.client))
+            streams.append(ResolvedStream(url: Self.adding("pot", token, to: stream.url), mimeType: stream.mimeType,
+                                          contentLength: stream.contentLength, headers: stream.headers,
+                                          isHLS: false, client: stream.client))
         }
         return streams
     }
@@ -332,26 +351,34 @@ actor YouTube {
         throw YouTubeError.allFailed(notes)
     }
 
-    /// A stream to play one upload: the first direct link that answers, else the audio-only
-    /// part of its HLS stream (AVPlayer plays HLS natively, and no video is fetched).
+    /// A stream to play one upload: the first client's direct link that answers all the way to
+    /// its end, else the audio-only part of an HLS stream (AVPlayer plays HLS natively).
     func playableStream(for videoId: String) async throws -> ResolvedStream {
-        let (all, found) = try await candidates(for: videoId)
-        var notes = found
-        for stream in all {
-            if stream.isHLS {
-                var request = URLRequest(url: stream.url)
-                stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-                guard let (data, _) = try? await session.data(for: request),
-                      let audio = try? HLSPlaylist.mediaPlaylist(in: String(decoding: data, as: UTF8.self), base: stream.url) else {
-                    notes.append("\(stream.client) HLS: couldn't read the playlist")
-                    continue
-                }
-                return ResolvedStream(url: audio, mimeType: stream.mimeType, contentLength: nil,
-                                      headers: stream.headers, isHLS: true, client: stream.client)
+        var notes: [String] = []
+        for client in Self.clients {
+            let found: [ResolvedStream]
+            do {
+                found = try await streams(for: videoId, client: client)
+            } catch {
+                if case YouTubeError.allFailed(let more) = error { notes += more } else { notes.append(error.localizedDescription) }
+                continue
             }
-            let status = await probe(stream)
-            if (200..<300).contains(status) { return stream }
-            notes.append("\(stream.client): audio refused (HTTP \(status))")
+            for stream in found {
+                if stream.isHLS {
+                    var request = URLRequest(url: stream.url)
+                    stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+                    guard let (data, _) = try? await session.data(for: request),
+                          let audio = try? HLSPlaylist.mediaPlaylist(in: String(decoding: data, as: UTF8.self), base: stream.url) else {
+                        notes.append("\(stream.client) HLS: couldn't read the playlist")
+                        continue
+                    }
+                    return ResolvedStream(url: audio, mimeType: stream.mimeType, contentLength: nil,
+                                          headers: stream.headers, isHLS: true, client: stream.client)
+                }
+                let status = await probe(stream)
+                if (200..<300).contains(status) { return stream }
+                notes.append("\(stream.client): audio refused (HTTP \(status))")
+            }
         }
         throw YouTubeError.allFailed(notes)
     }
@@ -360,18 +387,24 @@ actor YouTube {
     /// Links YouTube means to cut off still answer for the first megabyte, so the end is checked.
     func probe(_ stream: ResolvedStream) async -> Int {
         let end = stream.contentLength ?? 1024
-        var request = URLRequest(url: stream.rangeURL(max(0, end - 1024), end - 1))
-        stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-        request.timeoutInterval = 12
+        let request = stream.request(bytes: max(0, end - 1024), through: end - 1, number: 1)
         guard let (_, response) = try? await session.data(for: request) else { return 0 }
         return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
 
-    private func player(_ videoId: String, client: Client, sendVisitorData: Bool = true) async throws -> JSONTree.Object {
-        let visitorData = sendVisitorData ? self.visitorData : nil
+    /// Asks YouTube for a video's player data as `client`. Returns it with the playback nonce
+    /// (cpn) an app-style client sent, which goes on its stream links too.
+    private func player(_ videoId: String, client: Client, sendVisitorData: Bool = true) async throws -> (JSONTree.Object, String?) {
         var context: [String: Any] = ["clientName": client.clientName, "clientVersion": client.version, "hl": language, "gl": region]
         context.merge(client.extra) { a, _ in a }
+        let visitorData: String?
+        if client.app {
+            visitorData = try await appVisitor(for: client, context: context)
+        } else {
+            visitorData = sendVisitorData ? self.visitorData : nil
+        }
         if let visitorData { context["visitorData"] = visitorData }
+
         var payload: [String: Any] = [
             "context": ["client": context],
             "videoId": videoId,
@@ -381,6 +414,12 @@ actor YouTube {
         if client.embedded {
             payload["context"] = ["client": context, "thirdParty": ["embedUrl": "https://www.youtube.com/"]]
         }
+        var cpn: String?
+        if client.app {
+            payload["context"] = Self.appContext(context)
+            cpn = Self.nonce(16)
+            payload["cpn"] = cpn
+        }
         if client.needsPlayerScript {
             let timestamp = try await PlayerScript.shared.signatureTimestamp()
             payload["playbackContext"] = ["contentPlaybackContext": ["signatureTimestamp": timestamp]]
@@ -389,23 +428,66 @@ actor YouTube {
             // The player request's token is bound to the video.
             payload["serviceIntegrityDimensions"] = ["poToken": try await PoToken.shared.token(for: videoId)]
         }
-        var request = URLRequest(url: URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false")!)
+
+        let url = client.app
+            ? "https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false&t=\(Self.nonce(12))&id=\(videoId)"
+            : "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
+        var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(client.userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue(client.id, forHTTPHeaderField: "X-YouTube-Client-Name")
-        request.setValue(client.version, forHTTPHeaderField: "X-YouTube-Client-Version")
+        if client.app {
+            request.setValue("2", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+        } else {
+            request.setValue(client.id, forHTTPHeaderField: "X-YouTube-Client-Name")
+            request.setValue(client.version, forHTTPHeaderField: "X-YouTube-Client-Version")
+            if let visitorData { request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id") }
+        }
         if client.web {
             request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
             request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
         }
-        if let visitorData { request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id") }
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw YouTubeError.http(http.statusCode)
         }
-        return try JSONTree.parse(data)
+        return (try JSONTree.parse(data), cpn)
+    }
+
+    /// The context YouTube's apps send: the client, plus request and user settings.
+    private static func appContext(_ client: [String: Any]) -> [String: Any] {
+        [
+            "client": client,
+            "request": ["internalExperimentFlags": [Any](), "useSsl": true],
+            "user": ["lockedSafetyMode": false],
+        ]
+    }
+
+    /// An app-style client's own visitor ID, asked for once from YouTube's visitor_id endpoint.
+    private func appVisitor(for client: Client, context: [String: Any]) async throws -> String {
+        if let known = appVisitorData[client.name] { return known }
+        var request = URLRequest(url: URL(string: "https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false")!)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["context": Self.appContext(context)])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(client.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("2", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw YouTubeError.http(http.statusCode)
+        }
+        guard let visitor = JSONTree.string(try JSONTree.parse(data), "responseContext", "visitorData") else {
+            throw YouTubeError.unexpectedResponse
+        }
+        appVisitorData[client.name] = visitor
+        return visitor
+    }
+
+    /// Random letters, digits, "-" and "_", like YouTube's playback nonces.
+    private static func nonce(_ length: Int) -> String {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+        return String((0..<length).map { _ in alphabet.randomElement()! })
     }
 
     /// The best original-language AAC format in a player response, plain or scrambled.
@@ -432,12 +514,5 @@ actor YouTube {
         ResolvedStream(url: url, mimeType: format["mimeType"] as? String ?? "audio/mp4",
                        contentLength: (format["contentLength"] as? String).flatMap { Int64($0) },
                        headers: client.streamHeaders, isHLS: false, client: client.name)
-    }
-
-    private func friendly(_ reason: String) -> String {
-        if reason.localizedCaseInsensitiveContains("bot") {
-            return "YouTube wants to check you're not a bot. Try again later or on another network."
-        }
-        return reason
     }
 }
