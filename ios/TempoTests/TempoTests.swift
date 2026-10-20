@@ -106,6 +106,24 @@ final class StreamPickingTests: XCTestCase {
     }
 }
 
+/// Runs Google's BotGuard check in a web view and mints a token, as downloads do. Needs the
+/// network; skipped when YouTube's token service can't be reached.
+@MainActor
+final class PoTokenTests: XCTestCase {
+    func testMintsToken() async throws {
+        let token: String
+        do {
+            token = try await PoToken.shared.token(for: "dQw4w9WgXcQ")
+        } catch let PoToken.Failure.setup(step) where step.contains("HTTP") {
+            throw XCTSkip("YouTube's token service refused: \(step)")
+        }
+        XCTAssertGreaterThan(token.count, 40, token)
+        // Another identifier is minted from the same check, without running it again.
+        let other = try await PoToken.shared.token(for: "CgtxLXhvSFRRc1I1WSiD7NTWBg%3D%3D")
+        XCTAssertNotEqual(other, token)
+    }
+}
+
 /// Runs the bundled solver on YouTube's current player script in JavaScriptCore. Needs the
 /// network; skipped when YouTube's player script can't be loaded.
 final class PlayerScriptTests: XCTestCase {

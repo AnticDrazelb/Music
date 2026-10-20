@@ -116,8 +116,12 @@ actor YouTube {
         let extra: [String: Any]
         /// Its links are scrambled and need YouTube's player script to unlock (see PlayerScript).
         var needsPlayerScript = false
-        /// A web player: says it's embedded on youtube.com, and its links want the site's headers.
+        /// A web player: its links want youtube.com's headers.
         var web = false
+        /// Says it's embedded on youtube.com.
+        var embedded = false
+        /// Sends a PoToken with its player request and on its stream links.
+        var needsPoToken = false
 
         /// Headers googlevideo expects when fetching this client's links.
         var streamHeaders: [String: String] {
@@ -133,9 +137,15 @@ actor YouTube {
     private static let webUserAgentChrome =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
-    /// Tried in this order. The TV and embedded players need no token but scramble their links;
-    /// the phone apps' links are plain but are now cut off without a token.
+    /// Tried in this order. The mobile site gets a PoToken made in a web view; the TV and
+    /// embedded players scramble their links; the phone apps' links are now cut off without
+    /// a token only those apps can make.
     static let clients: [Client] = [
+        Client(
+            name: "MWEB", clientName: "MWEB", id: "2", version: "2.20250925.01.00",
+            userAgent: "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)",
+            extra: [:], needsPlayerScript: true, web: true, needsPoToken: true
+        ),
         Client(
             name: "TV", clientName: "TVHTML5", id: "7", version: "7.20250923.13.00",
             userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
@@ -147,7 +157,7 @@ actor YouTube {
         ),
         Client(
             name: "WEB_EMBEDDED", clientName: "WEB_EMBEDDED_PLAYER", id: "56", version: "1.20250923.21.00",
-            userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true, web: true
+            userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true, web: true, embedded: true
         ),
         Client(
             name: "ANDROID_VR", clientName: "ANDROID_VR", id: "28", version: "1.65.10",
@@ -181,8 +191,15 @@ actor YouTube {
         var unplayable: String?
         for client in Self.clients {
             do {
-                let root = try await player(videoId, client: client)
-                let status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
+                var root = try await player(videoId, client: client)
+                var status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
+                if status == "UNPLAYABLE",
+                   JSONTree.string(root, "playabilityStatus", "reason")?.localizedCaseInsensitiveContains("reload") == true {
+                    // "The page needs to be reloaded": the TV client turns down the visitor ID from
+                    // YouTube Music, so ask again without one.
+                    root = try await player(videoId, client: client, sendVisitorData: false)
+                    status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
+                }
                 guard status == "OK" else {
                     let reason = JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played"
                     if status != "LOGIN_REQUIRED" { unplayable = unplayable ?? friendly(reason) }
@@ -200,7 +217,17 @@ actor YouTube {
                 } else {
                     audio = Self.bestAudio(in: root, client: client)
                 }
-                if let audio { direct.append(audio) }
+                if let audio {
+                    if client.needsPoToken {
+                        do {
+                            direct += try await withPoTokens(audio, videoId: videoId)
+                        } catch {
+                            notes.append("\(client.name): \(error.localizedDescription)")
+                        }
+                    } else {
+                        direct.append(audio)
+                    }
+                }
                 let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:))
                 if let manifest {
                     hls.append(ResolvedStream(url: manifest, mimeType: "application/x-mpegURL", contentLength: nil,
@@ -219,6 +246,28 @@ actor YouTube {
             throw YouTubeError.allFailed(notes)
         }
         return (all, notes)
+    }
+
+    /// The stream with a PoToken on it. Logged out, YouTube binds the token to the visitor ID;
+    /// which spelling of the ID (or the video ID instead) it checks isn't documented, so each
+    /// is offered and the link check picks the one that works.
+    private func withPoTokens(_ stream: ResolvedStream, videoId: String) async throws -> [ResolvedStream] {
+        var identifiers: [String] = []
+        if let visitorData {
+            identifiers.append(visitorData)
+            if let decoded = visitorData.removingPercentEncoding, decoded != visitorData { identifiers.append(decoded) }
+        }
+        identifiers.append(videoId)
+        var streams: [ResolvedStream] = []
+        for identifier in identifiers {
+            let token = try await PoToken.shared.token(for: identifier)
+            var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)!
+            components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "pot", value: token)]
+            guard let url = components.url else { continue }
+            streams.append(ResolvedStream(url: url, mimeType: stream.mimeType, contentLength: stream.contentLength,
+                                          headers: stream.headers, isHLS: false, client: stream.client))
+        }
+        return streams
     }
 
     /// Why an OK player response had no usable audio, as far as it shows.
@@ -259,7 +308,8 @@ actor YouTube {
         return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
 
-    private func player(_ videoId: String, client: Client) async throws -> JSONTree.Object {
+    private func player(_ videoId: String, client: Client, sendVisitorData: Bool = true) async throws -> JSONTree.Object {
+        let visitorData = sendVisitorData ? self.visitorData : nil
         var context: [String: Any] = ["clientName": client.clientName, "clientVersion": client.version, "hl": language, "gl": region]
         context.merge(client.extra) { a, _ in a }
         if let visitorData { context["visitorData"] = visitorData }
@@ -269,12 +319,16 @@ actor YouTube {
             "contentCheckOk": true,
             "racyCheckOk": true,
         ]
-        if client.web {
+        if client.embedded {
             payload["context"] = ["client": context, "thirdParty": ["embedUrl": "https://www.youtube.com/"]]
         }
         if client.needsPlayerScript {
             let timestamp = try await PlayerScript.shared.signatureTimestamp()
             payload["playbackContext"] = ["contentPlaybackContext": ["signatureTimestamp": timestamp]]
+        }
+        if client.needsPoToken {
+            // The player request's token is bound to the video.
+            payload["serviceIntegrityDimensions"] = ["poToken": try await PoToken.shared.token(for: videoId)]
         }
         var request = URLRequest(url: URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false")!)
         request.httpMethod = "POST"
@@ -283,6 +337,10 @@ actor YouTube {
         request.setValue(client.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(client.id, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(client.version, forHTTPHeaderField: "X-YouTube-Client-Version")
+        if client.web {
+            request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
+            request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+        }
         if let visitorData { request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id") }
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
