@@ -135,6 +135,8 @@ actor PlayerScript {
             guard let url = Bundle.main.url(forResource: name, withExtension: "js"),
                   let script = try? String(contentsOf: url, encoding: .utf8) else { throw Failure.solver("solver missing") }
             context.evaluateScript(script)
+            // The library bundle exports one `lib` object; the solver expects its parts as globals.
+            if name == "lib.min" { context.evaluateScript("var meriyah = lib.meriyah; var astring = lib.astring;") }
         }
         guard context.objectForKeyedSubscript("jsc")?.isUndefined == false else {
             throw Failure.solver(context.exception?.toString() ?? "solver didn't load")
