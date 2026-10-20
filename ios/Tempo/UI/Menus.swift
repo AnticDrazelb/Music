@@ -180,6 +180,7 @@ extension Navigator {
                          action: { [unowned self] in prefs.clicker.toggle() }),
                 MenuItem(id: "haptics", title: "Haptics", detail: prefs.haptics ? "On" : "Off", chevron: false,
                          action: { [unowned self] in prefs.haptics.toggle() }),
+                MenuItem(id: "test", title: "Test Downloads", action: { [unowned self] in testDownloads() }),
                 MenuItem(id: "reset", title: "Delete All Songs", action: { [unowned self] in
                     push(confirmPage(title: "Delete All", confirm: "Delete All Songs") { [unowned self] in
                         player.stop()
@@ -188,6 +189,36 @@ extension Navigator {
                     })
                 }),
             ]
+        }
+    }
+
+    /// Tries every way of getting a song's audio from this phone and lists what happened, with
+    /// a row that copies the whole report to paste elsewhere.
+    func testDownloads() {
+        let page = Page(title: "Test Downloads")
+        page.loading = true
+        page.loadingText = "Testing…"
+        push(page)
+        Task {
+            var report = ["Tempo download test, \(Date().formatted(date: .abbreviated, time: .shortened))"]
+            let songs = (try? await YouTube.shared.searchSongs("green day longview")) ?? []
+            let picks = [songs.first { $0.isVideo == false }, songs.first { $0.isVideo != false }].compactMap { $0 }
+            if picks.isEmpty { report.append("Search failed") }
+            for song in picks {
+                report.append("")
+                report.append("\(song.title) — \(song.artist) [\(song.id)] \(song.isVideo == false ? "art track" : "video")")
+                report += await YouTube.shared.diagnose(song.id)
+            }
+            let text = report.joined(separator: "\n")
+            page.rows = {
+                [MenuItem(id: "copy", title: "Copy Report", chevron: false, action: {
+                    UIPasteboard.general.string = text
+                    Clicker.shared.buttonPress()
+                })] + report.enumerated().map { i, line in
+                    MenuItem(id: "line\(i)", title: line.isEmpty ? " " : line, chevron: false)
+                }
+            }
+            page.loading = false
         }
     }
 

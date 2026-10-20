@@ -383,6 +383,56 @@ actor YouTube {
         throw YouTubeError.allFailed(notes)
     }
 
+    /// What every client and link does for one video, line by line, for Settings → Test
+    /// Downloads: the player answer, the start and end of each direct link, and the HLS stream.
+    func diagnose(_ videoId: String) async -> [String] {
+        var lines: [String] = []
+        for client in Self.clients {
+            let found: [ResolvedStream]
+            do {
+                found = try await streams(for: videoId, client: client)
+            } catch YouTubeError.allFailed(let notes) {
+                lines += notes
+                continue
+            } catch {
+                lines.append("\(client.name): \(error.localizedDescription)")
+                continue
+            }
+            for stream in found {
+                if stream.isHLS {
+                    var request = URLRequest(url: stream.url)
+                    stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+                    guard let (data, response) = try? await session.data(for: request) else {
+                        lines.append("\(client.name) HLS: unreachable")
+                        continue
+                    }
+                    let master = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    guard let media = try? HLSPlaylist.mediaPlaylist(in: String(decoding: data, as: UTF8.self), base: stream.url) else {
+                        lines.append("\(client.name) HLS: playlist \(master), unreadable")
+                        continue
+                    }
+                    var mediaRequest = URLRequest(url: media)
+                    stream.headers.forEach { mediaRequest.setValue($1, forHTTPHeaderField: $0) }
+                    let playlist = (try? await session.data(for: mediaRequest)).map { String(decoding: $0.0, as: UTF8.self) } ?? ""
+                    let segments = HLSPlaylist.parseMediaPlaylist(playlist, base: media).segments
+                    var segment = 0
+                    if let first = segments.first {
+                        var segmentRequest = URLRequest(url: first)
+                        stream.headers.forEach { segmentRequest.setValue($1, forHTTPHeaderField: $0) }
+                        segment = ((try? await session.data(for: segmentRequest))?.1 as? HTTPURLResponse)?.statusCode ?? 0
+                    }
+                    lines.append("\(client.name) HLS: playlist \(master), \(segments.count) segments, first segment \(segment)")
+                } else {
+                    let start = ((try? await session.data(for: stream.request(bytes: 0, through: 65_535, number: 1)))?.1 as? HTTPURLResponse)?.statusCode ?? 0
+                    let end = await probe(stream)
+                    let token = stream.url.absoluteString.contains("pot=") ? " +token" : ""
+                    lines.append("\(client.name)\(token): start \(start), end \(end)\(start == 206 && end == 206 ? " ✓" : "")")
+                }
+            }
+        }
+        return lines
+    }
+
     /// Fetches the last kilobyte of a direct stream; returns the HTTP status (0 if unreachable).
     /// Links YouTube means to cut off still answer for the first megabyte, so the end is checked.
     func probe(_ stream: ResolvedStream) async -> Int {
