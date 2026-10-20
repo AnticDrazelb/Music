@@ -104,31 +104,43 @@ actor YouTube {
 
     // MARK: Streams
 
-    /// An app client YouTube serves direct (unciphered) stream URLs to.
+    /// A YouTube app the player request identifies as. Each gets different links: some stop
+    /// after the first megabyte for apps that don't send a token, so several are tried.
     struct Client {
         let name: String
+        /// The InnerTube client name sent to YouTube.
+        let clientName: String
         let id: String
         let version: String
         let userAgent: String
         let extra: [String: Any]
+        /// Its links are scrambled and need YouTube's player script to unlock (see PlayerScript).
+        var needsPlayerScript = false
     }
 
-    /// Tried in order: when YouTube refuses one ("confirm you're not a bot"), the next often works.
+    /// Tried in this order, following yt-dlp's choice of clients that need no token.
     static let clients: [Client] = [
         Client(
-            name: "ANDROID_VR", id: "28", version: "1.62.27",
-            userAgent: "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            name: "ANDROID_VR", clientName: "ANDROID_VR", id: "28", version: "1.65.10",
+            userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
             extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]
         ),
+        // The Android app without an SDK version isn't asked for a token.
         Client(
-            name: "IOS", id: "5", version: "20.10.4",
-            userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
-            extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]
+            name: "ANDROID_SDKLESS", clientName: "ANDROID", id: "3", version: "20.10.38",
+            userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip",
+            extra: ["osName": "Android", "osVersion": "11"]
         ),
         Client(
-            name: "ANDROID", id: "3", version: "20.10.38",
-            userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip",
-            extra: ["androidSdkVersion": 34, "osName": "Android", "osVersion": "14"]
+            name: "TV", clientName: "TVHTML5", id: "7", version: "7.20250923.13.00",
+            userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            extra: [:], needsPlayerScript: true
+        ),
+        // Mostly for its HLS stream, the last resort.
+        Client(
+            name: "IOS", clientName: "IOS", id: "5", version: "20.10.4",
+            userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            extra: ["deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iPhone", "osVersion": "18.3.2.22D82"]
         ),
     ]
 
@@ -152,7 +164,16 @@ actor YouTube {
                     notes.append("\(client.name): \(reason)")
                     continue
                 }
-                let audio = Self.bestAudio(in: root, client: client)
+                var audio: ResolvedStream?
+                if client.needsPlayerScript, let format = Self.bestAudioFormat(in: root) {
+                    do {
+                        audio = Self.stream(format, url: try await PlayerScript.shared.url(for: format), client: client)
+                    } catch {
+                        notes.append("\(client.name): \(error.localizedDescription)")
+                    }
+                } else {
+                    audio = Self.bestAudio(in: root, client: client)
+                }
                 if let audio { direct.append(audio) }
                 let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:))
                 if let manifest {
@@ -185,9 +206,11 @@ actor YouTube {
         throw YouTubeError.allFailed(notes)
     }
 
-    /// Fetches the first kilobyte of a direct stream; returns the HTTP status (0 if unreachable).
+    /// Fetches the last kilobyte of a direct stream; returns the HTTP status (0 if unreachable).
+    /// Links YouTube means to cut off still answer for the first megabyte, so the end is checked.
     func probe(_ stream: ResolvedStream) async -> Int {
-        var request = URLRequest(url: stream.rangeURL(0, 1023))
+        let end = stream.contentLength ?? 1024
+        var request = URLRequest(url: stream.rangeURL(max(0, end - 1024), end - 1))
         stream.headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         request.timeoutInterval = 12
         guard let (_, response) = try? await session.data(for: request) else { return 0 }
@@ -195,15 +218,19 @@ actor YouTube {
     }
 
     private func player(_ videoId: String, client: Client) async throws -> JSONTree.Object {
-        var context: [String: Any] = ["clientName": client.name, "clientVersion": client.version, "hl": language, "gl": region]
+        var context: [String: Any] = ["clientName": client.clientName, "clientVersion": client.version, "hl": language, "gl": region]
         context.merge(client.extra) { a, _ in a }
         if let visitorData { context["visitorData"] = visitorData }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "context": ["client": context],
             "videoId": videoId,
             "contentCheckOk": true,
             "racyCheckOk": true,
         ]
+        if client.needsPlayerScript {
+            let timestamp = try await PlayerScript.shared.signatureTimestamp()
+            payload["playbackContext"] = ["contentPlaybackContext": ["signatureTimestamp": timestamp]]
+        }
         var request = URLRequest(url: URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false")!)
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
@@ -219,20 +246,30 @@ actor YouTube {
         return try JSONTree.parse(data)
     }
 
-    static func bestAudio(in root: JSONTree.Object, client: Client) -> ResolvedStream? {
+    /// The best original-language AAC format in a player response, plain or scrambled.
+    static func bestAudioFormat(in root: JSONTree.Object) -> JSONTree.Object? {
         let formats = JSONTree.array(JSONTree.path(root, "streamingData", "adaptiveFormats")).compactMap { $0 as? JSONTree.Object }
         let candidates = formats.filter { format in
-            guard let mime = format["mimeType"] as? String, mime.hasPrefix("audio/mp4"), format["url"] is String else { return false }
+            guard let mime = format["mimeType"] as? String, mime.hasPrefix("audio/mp4"),
+                  format["url"] is String || format["signatureCipher"] is String else { return false }
             // Prefer the original track when YouTube offers dubbed ones.
             if let track = JSONTree.path(format, "audioTrack") as? JSONTree.Object,
                let isDefault = track["audioIsDefault"] as? Bool, !isDefault { return false }
             return true
         }
-        guard let best = candidates.max(by: { ($0["bitrate"] as? Int ?? 0) < ($1["bitrate"] as? Int ?? 0) }),
-              let urlString = best["url"] as? String, let url = URL(string: urlString) else { return nil }
-        let length = (best["contentLength"] as? String).flatMap { Int64($0) }
-        return ResolvedStream(url: url, mimeType: best["mimeType"] as? String ?? "audio/mp4", contentLength: length,
-                              headers: ["User-Agent": client.userAgent], isHLS: false, client: client.name)
+        return candidates.max { ($0["bitrate"] as? Int ?? 0) < ($1["bitrate"] as? Int ?? 0) }
+    }
+
+    static func bestAudio(in root: JSONTree.Object, client: Client) -> ResolvedStream? {
+        guard let best = bestAudioFormat(in: root), let urlString = best["url"] as? String,
+              let url = URL(string: urlString) else { return nil }
+        return stream(best, url: url, client: client)
+    }
+
+    static func stream(_ format: JSONTree.Object, url: URL, client: Client) -> ResolvedStream {
+        ResolvedStream(url: url, mimeType: format["mimeType"] as? String ?? "audio/mp4",
+                       contentLength: (format["contentLength"] as? String).flatMap { Int64($0) },
+                       headers: ["User-Agent": client.userAgent], isHLS: false, client: client.name)
     }
 
     private func friendly(_ reason: String) -> String {

@@ -14,7 +14,12 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Tempo
+      - path: Tempo
+        excludes:
+          - Resources/Solver/**
+      # yt-dlp's player-script solver, run by PlayerScript in JavaScriptCore.
+      - path: Tempo/Resources/Solver
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.tempo.pod

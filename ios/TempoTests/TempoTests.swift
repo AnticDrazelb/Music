@@ -95,4 +95,50 @@ final class StreamPickingTests: XCTestCase {
         XCTAssertEqual(stream.client, client.name)
         XCTAssertFalse(stream.isHLS)
     }
+
+    func testFindsScrambledFormat() throws {
+        let root: JSONTree.Object = ["streamingData": ["adaptiveFormats": [
+            ["itag": 140, "mimeType": "audio/mp4", "bitrate": 130_000, "signatureCipher": "s=abc&sp=sig&url=https%3A%2F%2Fa%2F140"],
+        ]]]
+        XCTAssertEqual(YouTube.bestAudioFormat(in: root)?["itag"] as? Int, 140)
+        // Without a plain URL it needs the player script, so no direct stream.
+        XCTAssertNil(YouTube.bestAudio(in: root, client: YouTube.clients[0]))
+    }
+}
+
+/// Runs the bundled solver on YouTube's current player script in JavaScriptCore. Needs the
+/// network; skipped when YouTube's player script can't be loaded.
+final class PlayerScriptTests: XCTestCase {
+    private let n = "ZdZIqFPQK-Ty8wId"
+    private let sig = "gN7a-hudCuAuPH6fByOk1_GNXN0yNMHShjZXS2VOgsEItAJz0tipeavEOmNdYN-wUtcEqD3bCXjc0iyKfAyZxCBGgIARwsSdQfJ2CJtt"
+
+    private func timestamp() async throws -> Int {
+        do {
+            return try await PlayerScript.shared.signatureTimestamp()
+        } catch PlayerScript.Failure.noPlayer {
+            throw XCTSkip("YouTube's player script couldn't be loaded")
+        }
+    }
+
+    func testSolvesLivePlayer() async throws {
+        let sts = try await timestamp()
+        XCTAssertGreaterThan(sts, 10_000)
+        let answers = try await PlayerScript.shared.solve(n: [n], sig: [sig])
+        let solvedN = try XCTUnwrap(answers.n[n])
+        XCTAssertFalse(solvedN.isEmpty)
+        XCTAssertNotEqual(solvedN, n)
+        let solvedSig = try XCTUnwrap(answers.sig[sig])
+        XCTAssertNotEqual(solvedSig, sig)
+    }
+
+    func testUnlocksScrambledFormat() async throws {
+        _ = try await timestamp()
+        let base = "https://rr1---sn-test.googlevideo.com/videoplayback?itag=140&n=\(n)&mime=audio%2Fmp4"
+        let cipher = "s=\(sig)&sp=sig&url=\(base.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)"
+        let url = try await PlayerScript.shared.url(for: ["signatureCipher": cipher, "mimeType": "audio/mp4"])
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(items.first { $0.name == "itag" }?.value, "140")
+        XCTAssertNotEqual(items.first { $0.name == "n" }?.value, n)
+        XCTAssertNotNil(items.first { $0.name == "sig" }?.value)
+    }
 }
