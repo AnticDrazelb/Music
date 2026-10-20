@@ -116,25 +116,49 @@ actor YouTube {
         let extra: [String: Any]
         /// Its links are scrambled and need YouTube's player script to unlock (see PlayerScript).
         var needsPlayerScript = false
+        /// A web player: says it's embedded on youtube.com, and its links want the site's headers.
+        var web = false
+
+        /// Headers googlevideo expects when fetching this client's links.
+        var streamHeaders: [String: String] {
+            var headers = ["User-Agent": userAgent]
+            if web {
+                headers["Origin"] = "https://www.youtube.com"
+                headers["Referer"] = "https://www.youtube.com/"
+            }
+            return headers
+        }
     }
 
-    /// Tried in this order, following yt-dlp's choice of clients that need no token.
+    private static let webUserAgentChrome =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+    /// Tried in this order. The TV and embedded players need no token but scramble their links;
+    /// the phone apps' links are plain but are now cut off without a token.
     static let clients: [Client] = [
+        Client(
+            name: "TV", clientName: "TVHTML5", id: "7", version: "7.20250923.13.00",
+            userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            extra: ["userAgent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"], needsPlayerScript: true
+        ),
+        Client(
+            name: "TV_SIMPLY", clientName: "TVHTML5_SIMPLY", id: "75", version: "1.0",
+            userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true
+        ),
+        Client(
+            name: "WEB_EMBEDDED", clientName: "WEB_EMBEDDED_PLAYER", id: "56", version: "1.20250923.21.00",
+            userAgent: webUserAgentChrome, extra: [:], needsPlayerScript: true, web: true
+        ),
         Client(
             name: "ANDROID_VR", clientName: "ANDROID_VR", id: "28", version: "1.65.10",
             userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
             extra: ["deviceMake": "Oculus", "deviceModel": "Quest 3", "androidSdkVersion": 32, "osName": "Android", "osVersion": "12L"]
         ),
-        // The Android app without an SDK version isn't asked for a token.
+        // The Android app without an SDK version.
         Client(
             name: "ANDROID_SDKLESS", clientName: "ANDROID", id: "3", version: "20.10.38",
             userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip",
             extra: ["osName": "Android", "osVersion": "11"]
-        ),
-        Client(
-            name: "TV", clientName: "TVHTML5", id: "7", version: "7.20250923.13.00",
-            userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
-            extra: [:], needsPlayerScript: true
         ),
         // Mostly for its HLS stream, the last resort.
         Client(
@@ -147,8 +171,9 @@ actor YouTube {
     /// Every way YouTube offers this song's audio, best first: each client's direct AAC (m4a)
     /// stream, then the iOS client's HLS stream. AVPlayer can't play YouTube's Opus/WebM, so
     /// only AAC is used. Direct links are sometimes refused when fetched (HTTP 403) even
-    /// though the lookup worked, so callers try them in turn.
-    func candidates(for videoId: String) async throws -> [ResolvedStream] {
+    /// though the lookup worked, so callers try them in turn. `notes` says what each client
+    /// that gave nothing usable answered, for the error shown when everything fails.
+    func candidates(for videoId: String) async throws -> (streams: [ResolvedStream], notes: [String]) {
         if visitorData == nil { _ = try? await musicPost("search", ["query": "music"]) }
         var direct: [ResolvedStream] = []
         var hls: [ResolvedStream] = []
@@ -159,9 +184,10 @@ actor YouTube {
                 let root = try await player(videoId, client: client)
                 let status = JSONTree.string(root, "playabilityStatus", "status") ?? "ERROR"
                 guard status == "OK" else {
-                    let reason = friendly(JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played")
-                    if status != "LOGIN_REQUIRED" { unplayable = unplayable ?? reason }
-                    notes.append("\(client.name): \(reason)")
+                    let reason = JSONTree.string(root, "playabilityStatus", "reason") ?? "can't be played"
+                    if status != "LOGIN_REQUIRED" { unplayable = unplayable ?? friendly(reason) }
+                    let short = reason.localizedCaseInsensitiveContains("bot") ? "bot check" : reason
+                    notes.append("\(client.name): \(short) (\(status))")
                     continue
                 }
                 var audio: ResolvedStream?
@@ -178,9 +204,11 @@ actor YouTube {
                 let manifest = JSONTree.string(root, "streamingData", "hlsManifestUrl").flatMap(URL.init(string:))
                 if let manifest {
                     hls.append(ResolvedStream(url: manifest, mimeType: "application/x-mpegURL", contentLength: nil,
-                                              headers: ["User-Agent": client.userAgent], isHLS: true, client: client.name))
+                                              headers: client.streamHeaders, isHLS: true, client: client.name))
                 }
-                if audio == nil && manifest == nil { notes.append("\(client.name): no AAC audio") }
+                if audio == nil && manifest == nil && !notes.contains(where: { $0.hasPrefix(client.name + ":") }) {
+                    notes.append("\(client.name): \(Self.whyNoAudio(root))")
+                }
             } catch {
                 notes.append("\(client.name): \(error.localizedDescription)")
             }
@@ -190,13 +218,27 @@ actor YouTube {
             if let unplayable { throw YouTubeError.unplayable(unplayable) }
             throw YouTubeError.allFailed(notes)
         }
-        return all
+        return (all, notes)
+    }
+
+    /// Why an OK player response had no usable audio, as far as it shows.
+    private static func whyNoAudio(_ root: JSONTree.Object) -> String {
+        let streaming = JSONTree.path(root, "streamingData") as? JSONTree.Object
+        guard let streaming else { return "no streams" }
+        let formats = JSONTree.array(streaming["adaptiveFormats"]).compactMap { $0 as? JSONTree.Object }
+        if formats.isEmpty {
+            return streaming["serverAbrStreamingUrl"] != nil ? "only SABR streams" : "no streams"
+        }
+        let audio = formats.filter { ($0["mimeType"] as? String)?.hasPrefix("audio/") == true }
+        if audio.isEmpty { return "no audio streams" }
+        if !audio.contains(where: { ($0["mimeType"] as? String)?.hasPrefix("audio/mp4") == true }) { return "no AAC audio" }
+        return "audio has no link"
     }
 
     /// A stream to play now: the first direct link that answers, else HLS (AVPlayer plays it natively).
     func playableStream(for videoId: String) async throws -> ResolvedStream {
-        let all = try await candidates(for: videoId)
-        var notes: [String] = []
+        let (all, found) = try await candidates(for: videoId)
+        var notes = found
         for stream in all {
             if stream.isHLS { return stream }
             let status = await probe(stream)
@@ -227,6 +269,9 @@ actor YouTube {
             "contentCheckOk": true,
             "racyCheckOk": true,
         ]
+        if client.web {
+            payload["context"] = ["client": context, "thirdParty": ["embedUrl": "https://www.youtube.com/"]]
+        }
         if client.needsPlayerScript {
             let timestamp = try await PlayerScript.shared.signatureTimestamp()
             payload["playbackContext"] = ["contentPlaybackContext": ["signatureTimestamp": timestamp]]
@@ -269,7 +314,7 @@ actor YouTube {
     static func stream(_ format: JSONTree.Object, url: URL, client: Client) -> ResolvedStream {
         ResolvedStream(url: url, mimeType: format["mimeType"] as? String ?? "audio/mp4",
                        contentLength: (format["contentLength"] as? String).flatMap { Int64($0) },
-                       headers: ["User-Agent": client.userAgent], isHLS: false, client: client.name)
+                       headers: client.streamHeaders, isHLS: false, client: client.name)
     }
 
     private func friendly(_ reason: String) -> String {

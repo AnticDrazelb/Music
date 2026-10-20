@@ -397,7 +397,8 @@ struct NowPlayingView: View {
                             .font(LCD.font(unit * 0.36, .regular))
                             .foregroundStyle(LCD.secondaryText)
                         } else if let error = player.error {
-                            Text(error).font(LCD.font(unit * 0.34, .regular)).foregroundStyle(Color(hex: 0xB3261E)).lineLimit(3)
+                            Text(error).font(LCD.font(unit * 0.3, .regular)).foregroundStyle(Color(hex: 0xB3261E))
+                                .lineLimit(8).minimumScaleFactor(0.6)
                         }
                     }
                     .foregroundStyle(LCD.text)

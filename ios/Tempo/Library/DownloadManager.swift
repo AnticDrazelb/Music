@@ -95,8 +95,9 @@ final class DownloadManager: ObservableObject {
         let progress: @MainActor (Double) -> Void = { [weak self] fraction in
             self?.states[track.id] = .downloading(fraction)
         }
-        var notes: [String] = []
-        for stream in try await YouTube.shared.candidates(for: track.id) {
+        let (streams, found) = try await YouTube.shared.candidates(for: track.id)
+        var notes = found
+        for stream in streams {
             try Task.checkCancellation()
             do {
                 if stream.isHLS {
