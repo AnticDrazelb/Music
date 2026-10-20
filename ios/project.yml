@@ -23,9 +23,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.tempo.pod
-        # WebKit's Swift add-on library is missing on some iOS versions; nothing in the app
-        # needs it, so a missing copy mustn't stop the app from launching.
-        OTHER_LDFLAGS: ["$(inherited)", "-L$(SDKROOT)/usr/lib/swift", "-Xlinker", "-weak-lswiftWebKit"]
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
