@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking // URLSession on Linux, for the stream check
+#endif
 
 enum YouTubeError: LocalizedError {
     case unexpectedResponse
@@ -112,7 +115,8 @@ actor YouTube {
             .filter { !$0.isEmpty }
     }
 
-    private func musicPost(_ endpoint: String, _ body: [String: Any]) async throws -> JSONTree.Object {
+    /// A YouTube Music (WEB_REMIX) request; `query` is added to the URL (continuation tokens).
+    func musicPost(_ endpoint: String, _ body: [String: Any], query: String = "") async throws -> JSONTree.Object {
         var payload = body
         payload["context"] = ["client": [
             "clientName": "WEB_REMIX",
@@ -120,7 +124,7 @@ actor YouTube {
             "hl": language,
             "gl": region,
         ]]
-        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false")!)
+        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false\(query)")!)
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

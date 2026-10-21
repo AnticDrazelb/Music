@@ -64,8 +64,12 @@ func check() async -> Int {
 }
 
 let finished = DispatchSemaphore(value: 0)
+var catalogPassed = true
 Task {
+    catalogPassed = await catalogCheck()
+    print("")
     _ = await check()
     finished.signal()
 }
 finished.wait()
+exit(catalogPassed ? 0 : 1)

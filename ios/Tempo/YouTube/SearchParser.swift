@@ -54,7 +54,7 @@ enum SearchParser {
         return track(videoId: videoId, rawTitle: JSONTree.text(card["title"]), bylineRuns: runs, item: card, type: type)
     }
 
-    private static func track(videoId: String, rawTitle: String, bylineRuns: [Any], item: JSONTree.Object, type: String?) -> Track {
+    static func track(videoId: String, rawTitle: String, bylineRuns: [Any], item: JSONTree.Object, type: String?) -> Track {
         // Split the byline into its " • " separated parts, keeping each part's runs.
         var parts: [[Any]] = [[]]
         for run in bylineRuns {
@@ -67,6 +67,9 @@ enum SearchParser {
         let albumPart = parts.dropFirst().first { part in
             part.contains { (JSONTree.string($0, "navigationEndpoint", "browseEndpoint", "browseId") ?? "").hasPrefix("MPREb_") }
         }
+        let albumId = albumPart?.lazy.compactMap { JSONTree.string($0, "navigationEndpoint", "browseEndpoint", "browseId") }.first
+        let artistId = parts.first?.lazy.compactMap { JSONTree.string($0, "navigationEndpoint", "browseEndpoint", "browseId") }
+            .first { $0.hasPrefix("UC") }
         let duration = parts.lazy.map(joined).compactMap(TitleCleaner.parseDuration).first
         let isArtistPage = parts.first?.contains {
             JSONTree.string($0, "navigationEndpoint", "browseEndpoint", "browseEndpointContextSupportedConfigs",
@@ -90,19 +93,23 @@ enum SearchParser {
             album: albumPart.map(joined),
             duration: duration,
             artworkURL: TitleCleaner.artworkURL(largestThumbnail(item)),
-            isVideo: type.map { $0 != catalogue }
+            isVideo: type.map { $0 != catalogue },
+            albumId: albumId,
+            artistId: artistId
         )
     }
 
-    private static func joined(_ runs: [Any]) -> String {
+    static func joined(_ runs: [Any]) -> String {
         runs.compactMap { JSONTree.string($0, "text") }.joined().trimmingCharacters(in: .whitespaces)
     }
 
-    private static func largestThumbnail(_ item: JSONTree.Object) -> String? {
+    static func largestThumbnail(_ item: Any?) -> String? {
         let lists = [
             JSONTree.path(item, "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
             JSONTree.path(item, "thumbnail", "croppedSquareThumbnailRenderer", "thumbnail", "thumbnails"),
             JSONTree.path(item, "thumbnail", "thumbnails"),
+            JSONTree.path(item, "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
+            JSONTree.path(item, "foregroundThumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"),
         ]
         let list = lists.lazy.compactMap { $0 as? [Any] }.first ?? []
         return list.compactMap { $0 as? JSONTree.Object }

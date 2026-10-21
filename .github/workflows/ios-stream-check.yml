@@ -1,6 +1,6 @@
 name: iOS stream check
 
-# Downloads real songs with the iOS app's stream code from a GitHub runner (an ordinary public
+# Loads every kind of YouTube Music page and downloads real songs with the iOS app's code from a GitHub runner (an ordinary public
 # address), and prints what each YouTube client did.
 on:
   push:
@@ -16,8 +16,7 @@ jobs:
       - name: Download songs
         run: |
           mkdir -p /tmp/check
-          cp ios/Tempo/YouTube/{JSONTree,TitleCleaner,SearchParser,HLSPlaylist}.swift ios/Tempo/App/Track.swift ios/StreamCheck/*.swift /tmp/check/
-          (echo "import FoundationNetworking"; cat ios/Tempo/YouTube/YouTube.swift) > /tmp/check/YouTube.swift
+          cp ios/Tempo/YouTube/{JSONTree,TitleCleaner,SearchParser,HLSPlaylist,Catalog,YouTube}.swift ios/Tempo/App/Track.swift ios/StreamCheck/*.swift /tmp/check/
           cd /tmp/check
           swift --version
           swiftc -swift-version 5 *.swift -o check

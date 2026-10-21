@@ -19,6 +19,10 @@ struct Track: Codable, Identifiable, Hashable {
     /// True for a music video or other upload, false for a catalogue "art track" (audio with
     /// the album cover), nil when unknown. Only the audio is ever fetched either way.
     var isVideo: Bool?
+    /// YouTube Music's album page (an MPREb_ browse ID), for Go to Album.
+    var albumId: String?
+    /// The artist's channel (UC…), for Go to Artist.
+    var artistId: String?
 
     var albumTitle: String { album?.isEmpty == false ? album! : "Unknown Album" }
 
