@@ -77,6 +77,13 @@ struct IPodView: View {
         case "settings": navigator.push(navigator.settingsPage())
         case "black": prefs.body = .black
         case "results": navigator.runSearch("Bohemian Rhapsody")
+        case "browse": navigator.push(navigator.browsePage())
+        case "top20":
+            navigator.prefs.chartRegion = "us"
+            navigator.openChart(limit: 20)
+        case "discover": navigator.discoverPage()
+        case "artist": navigator.openArtist("UC4JNeITH4P7G51C1hJoG6vQ", name: "Green Day", artwork: nil)
+        case "album": navigator.openAlbum(AlbumRef(browseId: "MPREb_6mEf8PoUCeE", title: "Dookie", subtitle: "Green Day", artworkURL: nil))
         case "nowplaying":
             Task {
                 guard let first = try? await YouTube.shared.searchSongs("Daft Punk One More Time").first else { return }

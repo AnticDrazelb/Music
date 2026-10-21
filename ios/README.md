@@ -16,7 +16,19 @@ offline listening.
 - You can also tap rows on the screen directly.
 - **Search**: turn the wheel through the letters and press the center button to type each one,
   then choose **GO**. Or tap the search box to use the keyboard. Results come from YouTube
-  Music's catalogue. Select a song to play it (streamed) or **Download** it.
+  Music's catalogue, by Songs, Albums, Artists, Playlists and Videos, with More Results at the end
+  of each. Select a song to play it (streamed) or **Download** it.
+- **Discover**: Radio from Your Library (a station mixed from songs you've downloaded), Similar
+  to what's playing, and YouTube Music's own rows: Quick picks, Throwbacks, All-time essentials
+  and more.
+- **Browse**: Top 20, Top 100 and Top Artists from YouTube Charts (this week, for your country
+  or the world: Settings → Charts), New Releases, and Genres & Moods.
+- **Albums, artists and playlists** open their own pages. Shuffle or Download All at the top,
+  then the songs: select one to play from there, hold the center button for its page. Artists
+  have Top Songs, Radio, Albums, Singles & EPs and Fans might also like; long playlists have
+  More Songs.
+- **Song pages**: Play, Download, Play Next, Start Radio, Go to Album, Go to Artist.
+- **Autoplay** (Settings, on by default): when the queue runs out, similar songs keep playing.
 - **Music → Artists / Albums / Songs**: everything you've downloaded or imported, playable offline.
 - **Your own music**: Music → Import from Files picks songs from Files, iCloud Drive or a USB
   drive. You can also share an audio file to Tempo ("Open in Tempo"), or copy files into
@@ -29,8 +41,8 @@ offline listening.
 - **Now Playing** shows the artwork with its reflection, the progress bar and the time left.
   Turn the wheel to change the volume. Press the center button to scrub through the song with
   the wheel.
-- **Settings**: Shuffle, Repeat, Body (Silver/Black), Backlight, Clicker, Haptics, About, and Delete All
-  Songs.
+- **Settings**: Shuffle, Repeat, Autoplay, Charts (your country or Global), Body (Silver/Black),
+  Backlight, Clicker, Haptics, Test Downloads, About, and Delete All Songs.
 - Music keeps playing in the background, with lock screen and Control Center controls.
 - Downloaded songs are in Files → On My iPhone → Tempo (as `.m4a`), along with the artwork.
 
