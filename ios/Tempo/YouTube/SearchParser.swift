@@ -40,7 +40,12 @@ enum SearchParser {
             let runs = JSONTree.array(JSONTree.path(column, "runs"))
             return runs.isEmpty ? [] : runs + [["text": separator]]
         }
-        return track(videoId: videoId, rawTitle: title, bylineRuns: bylineRuns, item: item, type: type)
+        var song = track(videoId: videoId, rawTitle: title, bylineRuns: bylineRuns, item: item, type: type)
+        // Album and playlist rows put the length in a column on the right.
+        if song.duration == nil, let fixed = JSONTree.array(item["fixedColumns"]).first {
+            song.duration = TitleCleaner.parseDuration(JSONTree.text(JSONTree.path(fixed, "musicResponsiveListItemFixedColumnRenderer", "text")))
+        }
+        return song
     }
 
     /// The big "Top result" card on unfiltered searches, when it's a song or video.
@@ -60,7 +65,8 @@ enum SearchParser {
         for run in bylineRuns {
             if JSONTree.string(run, "text") == separator { parts.append([]) } else { parts[parts.count - 1].append(run) }
         }
-        parts = parts.filter { !$0.isEmpty }
+        // Play and view counts ("114 plays", "3.2M views") aren't artists.
+        parts = parts.filter { !$0.isEmpty && !isCount(joined($0)) }
         if let label = parts.first.map(joined), typeLabels.contains(label) { parts.removeFirst() }
 
         let artistText = parts.first.map(joined) ?? ""
@@ -97,6 +103,10 @@ enum SearchParser {
             albumId: albumId,
             artistId: artistId
         )
+    }
+
+    private static func isCount(_ text: String) -> Bool {
+        text.range(of: #"^[\d.,]+[KMB]? (plays?|views?|listeners?)$"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     static func joined(_ runs: [Any]) -> String {

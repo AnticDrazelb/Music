@@ -33,8 +33,8 @@ final class Page: ObservableObject, Identifiable {
     let title: String
     let kind: Kind
     var rows: () -> [MenuItem]
-    /// A song shown above the rows (a song's own page).
-    let track: Track?
+    /// A song (or album, artist or playlist) shown above the rows.
+    @Published var track: Track?
     /// The first screen: shows artwork beside the menu.
     let isRoot: Bool
 
@@ -43,7 +43,6 @@ final class Page: ObservableObject, Identifiable {
     @Published var loading = false
     var loadingText = "Searching…"
     @Published var message: String?
-    @Published var results: [Track] = []
 
     // Search
     @Published var query = ""
@@ -242,35 +241,6 @@ final class Navigator: ObservableObject {
         case "delete": if !page.query.isEmpty { page.query.removeLast() }
         case "search": runSearch(page.query)
         default: page.query += page.query.isEmpty || page.query.hasSuffix(" ") ? key : key.lowercased()
-        }
-    }
-
-    func runSearch(_ text: String) {
-        let query = text.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return }
-        let page = Page(title: "Search")
-        page.rows = { [unowned self, weak page] in self.searchResultRows(for: page) }
-        page.loading = true
-        push(page)
-        Task {
-            do {
-                let found = try await YouTube.shared.searchSongs(query)
-                page.results = found
-                page.message = found.isEmpty ? "No songs found for “\(query)”" : nil
-            } catch {
-                page.message = error.localizedDescription
-            }
-            page.loading = false
-        }
-    }
-
-    private func searchResultRows(for page: Page?) -> [MenuItem] {
-        guard let page else { return [] }
-        let results = page.results
-        return results.map { track in
-            MenuItem(id: track.id, title: "\(track.title) — \(track.artist)", detail: status(of: track),
-                     action: { [unowned self] in push(songPage(track, context: results)) },
-                     holdAction: { [unowned self] in downloads.download(track) })
         }
     }
 

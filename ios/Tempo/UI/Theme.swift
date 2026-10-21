@@ -13,6 +13,10 @@ final class Preferences: ObservableObject {
     /// Seconds before the backlight goes off; 0 keeps it on.
     @Published var backlight: Int { didSet { defaults.set(backlight, forKey: "backlight") } }
     static let backlightChoices = [10, 20, 30, 60, 0]
+    /// When the queue runs out, keep going with similar songs.
+    @Published var autoplay: Bool { didSet { defaults.set(autoplay, forKey: "autoplay") } }
+    /// Charts for the whole world ("global") or one country (a two-letter code).
+    @Published var chartRegion: String { didSet { defaults.set(chartRegion, forKey: "chartRegion") } }
 
     private let defaults = UserDefaults.standard
 
@@ -21,6 +25,8 @@ final class Preferences: ObservableObject {
         clicker = defaults.object(forKey: "clicker") as? Bool ?? true
         haptics = defaults.object(forKey: "haptics") as? Bool ?? true
         backlight = defaults.object(forKey: "backlight") as? Int ?? 20
+        autoplay = defaults.object(forKey: "autoplay") as? Bool ?? true
+        chartRegion = defaults.string(forKey: "chartRegion") ?? (Locale.current.region?.identifier.lowercased() ?? "global")
     }
 }
 

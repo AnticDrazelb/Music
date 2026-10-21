@@ -6,6 +6,8 @@ extension Navigator {
         Page(title: "iPod", isRoot: true) { [unowned self] in
             var rows = [
                 MenuItem(id: "music", title: "Music", action: { [unowned self] in push(musicPage()) }),
+                MenuItem(id: "discover", title: "Discover", action: { [unowned self] in discoverPage() }),
+                MenuItem(id: "browse", title: "Browse", action: { [unowned self] in push(browsePage()) }),
                 MenuItem(id: "search", title: "Search", action: { [unowned self] in push(searchPage()) }),
                 MenuItem(id: "downloads", title: "Downloads",
                          detail: downloads.activeCount > 0 ? "\(downloads.activeCount)" : nil,
@@ -113,6 +115,19 @@ extension Navigator {
                     Clicker.shared.buttonPress()
                 }),
             ]
+            if !track.id.hasPrefix("local-") {
+                rows.append(MenuItem(id: "radio", title: "Start Radio", chevron: false, action: { [unowned self] in startRadio(from: track) }))
+            }
+            if let albumId = track.albumId {
+                rows.append(MenuItem(id: "album", title: "Go to Album", action: { [unowned self] in
+                    openAlbum(AlbumRef(browseId: albumId, title: track.albumTitle, subtitle: track.artist, artworkURL: track.artworkURL))
+                }))
+            }
+            if let artistId = track.artistId {
+                rows.append(MenuItem(id: "artist", title: "Go to Artist", action: { [unowned self] in
+                    openArtist(artistId, name: track.artist, artwork: nil)
+                }))
+            }
             if library.contains(track.id) {
                 rows.append(MenuItem(id: "inlib", title: "In Your Library", detail: "✓", chevron: false))
                 rows.append(MenuItem(id: "delete", title: "Delete from Library", action: { [unowned self] in
@@ -167,6 +182,13 @@ extension Navigator {
                 MenuItem(id: "repeat", title: "Repeat", detail: player.repeatMode.rawValue, chevron: false, action: { [unowned self] in
                     let all = AudioPlayer.RepeatMode.allCases
                     player.repeatMode = all[(all.firstIndex(of: player.repeatMode)! + 1) % all.count]
+                }),
+                MenuItem(id: "autoplay", title: "Autoplay", detail: prefs.autoplay ? "On" : "Off", chevron: false,
+                         action: { [unowned self] in prefs.autoplay.toggle() }),
+                MenuItem(id: "charts", title: "Charts", detail: prefs.chartRegion == "global" ? "Global" : prefs.chartRegion.uppercased(),
+                         chevron: false, action: { [unowned self] in
+                    let home = Locale.current.region?.identifier.lowercased() ?? "us"
+                    prefs.chartRegion = prefs.chartRegion == "global" ? home : "global"
                 }),
                 MenuItem(id: "body", title: "Body", detail: prefs.body.rawValue, chevron: false, action: { [unowned self] in
                     withAnimation(.easeInOut(duration: 0.4)) { prefs.body = prefs.body == .silver ? .black : .silver }

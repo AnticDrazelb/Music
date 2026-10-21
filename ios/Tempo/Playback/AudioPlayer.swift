@@ -118,12 +118,41 @@ final class AudioPlayer: ObservableObject {
             index += 1
         } else if repeatMode == .all {
             index = 0
+        } else if Preferences.shared.autoplay, let last = current, !last.id.hasPrefix("local-") {
+            continueWithRadio(after: last)
+            return
         } else {
             pause()
             seek(to: 0)
             return
         }
         load(autoplay: true)
+    }
+
+    /// Autoplay: the queue ran out, so add songs like the last one and carry on.
+    private func continueWithRadio(after last: Track) {
+        isLoading = true
+        Task {
+            let similar = (try? await YouTube.shared.radio(last.id)) ?? []
+            isLoading = false
+            let fresh = similar.filter { song in !queue.contains { $0.id == song.id } }
+            guard current?.id == last.id, !fresh.isEmpty else {
+                pause()
+                seek(to: 0)
+                return
+            }
+            queue += fresh
+            unshuffled += fresh
+            index += 1
+            load(autoplay: true)
+        }
+    }
+
+    /// Plays a radio station built from `track`: it first, then similar songs.
+    func playRadio(from track: Track) async throws {
+        var songs = try await YouTube.shared.radio(track.id)
+        if !songs.contains(where: { $0.id == track.id }) { songs.insert(track, at: 0) }
+        play(songs, startAt: songs.firstIndex { $0.id == track.id } ?? 0)
     }
 
     /// Like an iPod: back to the start of the song, or the previous song in the first seconds.
