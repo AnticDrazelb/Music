@@ -1,0 +1,102 @@
+name: Build iOS
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+    tags: ["ios-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Unit tests
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          set +e
+          xcodebuild test -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" > test.log 2>&1
+          STATUS=$?
+          grep -E "Test Case .*(passed|failed|skipped)|: error|XCTAssert|Executed" test.log
+          if [ $STATUS -ne 0 ]; then echo "--- end of test log ---"; tail -80 test.log; fi
+          exit $STATUS
+
+      - name: Simulator screenshots
+        continue-on-error: true
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcodebuild build -project Tempo.xcodeproj -scheme Tempo -destination "id=$DEVICE" -derivedDataPath build/sim -quiet
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE"
+          xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Tempo.app
+          mkdir -p screenshots
+          for screen in main music search results settings nowplaying browse top20 discover artist album black; do
+            xcrun simctl terminate "$DEVICE" app.tempo.pod || true
+            SIMCTL_CHILD_TEMPO_SCREEN=$screen xcrun simctl launch "$DEVICE" app.tempo.pod
+            sleep 10
+            xcrun simctl io "$DEVICE" screenshot "screenshots/$screen.png"
+          done
+
+      - name: Publish screenshots branch
+        if: github.ref_type == 'branch'
+        continue-on-error: true
+        run: |
+          cd screenshots
+          git init -q -b ios-screenshots
+          git add .
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ios-screenshots
+
+      - name: Build unsigned IPA
+        run: |
+          xcodebuild archive -project Tempo.xcodeproj -scheme Tempo -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/Tempo.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -quiet
+          VERSION=$(grep -oE 'MARKETING_VERSION: "[^"]+"' project.yml | cut -d'"' -f2)
+          mkdir -p build/Payload
+          cp -R build/Tempo.xcarchive/Products/Applications/Tempo.app build/Payload/
+          # A strong link to WebKit's Swift add-on stops the app launching where iOS lacks it.
+          if otool -l build/Payload/Tempo.app/Tempo | grep -A2 "cmd LC_LOAD_DYLIB" | grep -q libswiftWebKit; then
+            echo "Tempo links libswiftWebKit strongly"; exit 1
+          fi
+          (cd build && zip -qry "Tempo-iPod-$VERSION.ipa" Payload && cp "Tempo-iPod-$VERSION.ipa" Tempo-iPod.ipa)
+          echo "IPA=ios/build/Tempo-iPod-$VERSION.ipa" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tempo-iPod-ipa
+          path: ${{ env.IPA }}
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/ios-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.IPA }}
+
+      # A rolling release with a fixed download link:
+      # https://github.com/<owner>/<repo>/releases/download/ios-latest/Tempo-iPod.ipa
+      - name: Publish latest build
+        if: github.ref == 'refs/heads/claude/ios-ipod'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          target_commitish: ${{ github.sha }}
+          name: Tempo iPod (latest build)
+          body: "Latest iOS build (${{ env.VERSION }}, ${{ github.sha }}). Unsigned: install with AltStore or Sideloadly."
+          prerelease: true
+          make_latest: false
+          files: ios/build/Tempo-iPod.ipa
