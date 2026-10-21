@@ -46,7 +46,7 @@ extension Navigator {
 
     /// Rows for a list of songs played like an album: Shuffle and Download All on top, then
     /// the songs; selecting one plays the list from there, holding opens its page.
-    func songListRows(_ songs: [Track], numbered: Bool = false, details: [String?]? = nil) -> [MenuItem] {
+    func songListRows(_ songs: [Track], numbered: Bool = false, withArtist: Bool = true, details: [String?]? = nil) -> [MenuItem] {
         guard !songs.isEmpty else { return [] }
         let missing = songs.filter { !library.contains($0.id) }
         var rows = [MenuItem(id: "shuffle", title: "Shuffle", chevron: false, action: { [unowned self] in
@@ -64,7 +64,7 @@ extension Navigator {
                                  }))
         }
         rows += songs.enumerated().map { i, track in
-            MenuItem(id: "\(i)-" + track.id, title: numbered ? "\(i + 1). \(track.title)" : "\(track.title) — \(track.artist)",
+            MenuItem(id: "\(i)-" + track.id, title: (numbered ? "\(i + 1). " : "") + track.title + (withArtist ? " — \(track.artist)" : ""),
                      detail: status(of: track) ?? details.flatMap { $0[i] } ?? track.duration.map { TimeText.string(Double($0)) }, chevron: false,
                      action: { [unowned self] in
                          player.play(songs, startAt: i)
@@ -128,7 +128,7 @@ extension Navigator {
             page.track = header(loaded.album.title, loaded.artist ?? album.subtitle, loaded.album.artworkURL ?? album.artworkURL,
                                 detail: loaded.album.subtitle)
             return { [unowned self] in
-                var rows = songListRows(loaded.tracks, numbered: true)
+                var rows = songListRows(loaded.tracks, numbered: true, withArtist: false)
                 if let artistId = loaded.artistId {
                     rows.insert(MenuItem(id: "artist", title: "Go to \(loaded.artist ?? "Artist")",
                                          action: { [unowned self] in openArtist(artistId, name: loaded.artist ?? "Artist", artwork: nil) }),
