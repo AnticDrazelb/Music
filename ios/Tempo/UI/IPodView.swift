@@ -83,7 +83,11 @@ struct IPodView: View {
             navigator.openChart(limit: 20)
         case "discover": navigator.discoverPage()
         case "artist": navigator.openArtist("UC4JNeITH4P7G51C1hJoG6vQ", name: "Green Day", artwork: nil)
-        case "album": navigator.openAlbum(AlbumRef(browseId: "MPREb_6mEf8PoUCeE", title: "Dookie", subtitle: "Green Day", artworkURL: nil))
+        case "album":
+            Task {
+                let found = try? await YouTube.shared.search("green day dookie", filter: .albums)
+                if case .album(let album)? = found?.items.first { navigator.openAlbum(album) }
+            }
         case "nowplaying":
             Task {
                 guard let first = try? await YouTube.shared.searchSongs("Daft Punk One More Time").first else { return }
